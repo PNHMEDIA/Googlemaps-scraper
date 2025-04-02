@@ -1,0 +1,3667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Maps Rating Analytics</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #4285F4;  /* Google blue */
+            --secondary-color: #34A853; /* Google green */
+            --accent-color: #FBBC05;   /* Google yellow */
+            --danger-color: #EA4335;   /* Google red */
+            --light-bg: #f8f9fa;
+            --dark-text: #202124;
+            --light-text: #5f6368;
+            --border-color: #dadce0;
+            --shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Google Sans', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--dark-text);
+            background-color: var(--light-bg);
+            padding: 20px;
+        }
+
+        .app-container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+        }
+
+        h1 {
+            color: var(--primary-color);
+            font-size: 2.2rem;
+            margin-bottom: 10px;
+        }
+
+        h2 {
+            color: var(--dark-text);
+            margin: 20px 0 15px;
+            font-size: 1.5rem;
+        }
+
+        h3 {
+            font-size: 1.2rem;
+            margin: 15px 0 10px;
+        }
+
+        .subtitle {
+            color: var(--light-text);
+            font-weight: normal;
+        }
+
+        .card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: var(--dark-text);
+        }
+
+        input[type="text"], input[type="number"], input[type="date"], input[type="email"], select, textarea {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .btn {
+            display: inline-block;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 500;
+            transition: background-color 0.3s, transform 0.2s;
+        }
+
+        .btn:hover {
+            background-color: #3367D6;
+            transform: translateY(-2px);
+        }
+
+        .btn-success {
+            background-color: var(--secondary-color);
+        }
+
+        .btn-success:hover {
+            background-color: #2E8B46;
+        }
+
+        .btn-lg {
+            padding: 14px 28px;
+            font-size: 18px;
+        }
+
+        .btn-block {
+            display: block;
+            width: 100%;
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .loading {
+            text-align: center;
+            margin: 20px 0;
+            display: none;
+        }
+
+        .spinner {
+            border: 4px solid rgba(66, 133, 244, 0.2);
+            border-top: 4px solid var(--primary-color);
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .alert {
+            padding: 12px 20px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .alert-error {
+            background-color: rgba(234, 67, 53, 0.1);
+            color: var(--danger-color);
+            border-left: 4px solid var(--danger-color);
+        }
+
+        .alert-success {
+            background-color: rgba(52, 168, 83, 0.1);
+            color: var(--secondary-color);
+            border-left: 4px solid var(--secondary-color);
+        }
+
+        .current-stats {
+            background-color: rgba(66, 133, 244, 0.1);
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-card {
+            background-color: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--primary-color);
+            margin: 10px 0;
+        }
+
+        .stat-label {
+            color: var(--light-text);
+            font-size: 0.9rem;
+        }
+
+        .result-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 25px 0;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .result-table th, .result-table td {
+            padding: 15px;
+            text-align: left;
+        }
+
+        .result-table thead th {
+            background-color: var(--primary-color);
+            color: white;
+            font-weight: 500;
+        }
+
+        .result-table tbody tr:nth-child(even) {
+            background-color: rgba(66, 133, 244, 0.05);
+        }
+
+        .result-table tbody tr:hover {
+            background-color: rgba(66, 133, 244, 0.1);
+        }
+
+        .graph-container {
+            margin: 30px 0;
+            padding: 20px;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            height: 400px;
+        }
+
+        .grid-2 {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 25px;
+            margin: 30px 0;
+        }
+
+        .report-templates {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            overflow-x: auto;
+            padding-bottom: 10px;
+        }
+
+        .template-option {
+            flex: 0 0 200px;
+            border: 2px solid var(--border-color);
+            border-radius: 8px;
+            padding: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .template-option:hover {
+            transform: translateY(-5px);
+            box-shadow: var(--shadow);
+        }
+
+        .template-option.selected {
+            border-color: var(--primary-color);
+            background-color: rgba(66, 133, 244, 0.05);
+        }
+
+        .template-preview {
+            height: 120px;
+            background-color: #f1f3f4;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .preview-basic {
+            font-family: 'Courier New', monospace;
+            font-size: 10px;
+            color: #555;
+            text-align: left;
+            padding: 10px;
+            line-height: 1.2;
+        }
+
+        .preview-professional {
+            background: linear-gradient(to bottom, var(--primary-color) 30px, white 30px);
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+
+        .preview-professional::after {
+            content: "";
+            position: absolute;
+            top: 40px;
+            left: 10px;
+            right: 10px;
+            height: 60px;
+            background: repeating-linear-gradient(
+                #f1f3f4 0px,
+                #f1f3f4 10px,
+                #dadce0 10px,
+                #dadce0 11px
+            );
+        }
+
+        .preview-data {
+            display: flex;
+            flex-direction: column;
+            padding: 5px;
+        }
+
+        .preview-data-item {
+            height: 10px;
+            background-color: var(--accent-color);
+            margin-bottom: 5px;
+            border-radius: 2px;
+            width: 80%;
+        }
+
+        .preview-data-graph {
+            height: 40px;
+            background: linear-gradient(to top, var(--secondary-color), var(--primary-color));
+            margin-top: 10px;
+            border-radius: 4px;
+        }
+
+        .form-column {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .template-name {
+            text-align: center;
+            font-weight: 500;
+            margin-top: 5px;
+        }
+
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid var(--border-color);
+            margin-bottom: 20px;
+        }
+
+        .tab {
+            padding: 12px 24px;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+
+        .tab:hover {
+            color: var(--primary-color);
+        }
+
+        .tab.active {
+            border-bottom-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        .pdf-preview {
+            border: 1px solid var(--border-color);
+            padding: 20px;
+            margin: 20px 0;
+            max-height: 600px;
+            overflow: auto;
+        }
+
+        #pdfPreview {
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            background-color: white;
+            padding: 30px;
+            width: 100%;
+        }
+
+        @media print {
+            body * {
+                visibility: hidden;
+            }
+            #pdfPreview, #pdfPreview * {
+                visibility: visible;
+            }
+            #pdfPreview {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                box-shadow: none;
+            }
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        .callout {
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+            background-color: rgba(251, 188, 5, 0.1);
+            border-left: 4px solid var(--accent-color);
+        }
+
+        .callout-title {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        #resultsTabs {
+            margin-top: 30px;
+        }
+
+        .report-header-basic, 
+        .report-header-professional,
+        .report-header-data,
+        .report-header-advanced {
+            padding: 20px 0;
+            margin-bottom: 20px;
+        }
+
+        .report-header-professional {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 30px;
+            border-radius: 8px 8px 0 0;
+        }
+        
+        .report-header-advanced {
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            padding: 40px;
+            border-radius: 8px 8px 0 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .report-header-advanced::after {
+            content: "";
+            position: absolute;
+            bottom: -50px;
+            right: -50px;
+            width: 150px;
+            height: 150px;
+            background-color: rgba(255, 255, 255, 0.1);
+            border-radius: 50%;
+        }
+
+        .text-center {
+            text-align: center;
+        }
+
+        .mb-20 {
+            margin-bottom: 20px;
+        }
+
+        .disclaimer {
+            font-size: 0.8rem;
+            color: var(--light-text);
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .checkbox-group {
+            margin: 15px 0;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .checkbox-item input[type="checkbox"] {
+            margin-right: 10px;
+            width: auto;
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 34px;
+            margin-left: 10px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 34px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 26px;
+            width: 26px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary-color);
+        }
+
+        input:focus + .slider {
+            box-shadow: 0 0 1px var(--primary-color);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+        
+        .rating-breakdown {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: rgba(66, 133, 244, 0.05);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .section-collapsible {
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            margin-bottom: 15px;
+            overflow: hidden;
+        }
+        
+        .section-header {
+            background-color: rgba(66, 133, 244, 0.05);
+            padding: 15px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .section-content {
+            padding: 15px;
+            display: none;
+            border-top: 1px solid var(--border-color);
+        }
+        
+        .section-header.active + .section-content {
+            display: block;
+        }
+        
+        .toggle-icon {
+            transition: transform 0.3s;
+        }
+        
+        .section-header.active .toggle-icon {
+            transform: rotate(180deg);
+        }
+        
+        .pdf-options {
+            margin: 20px 0;
+            padding: 15px;
+            background-color: rgba(66, 133, 244, 0.05);
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .star-distribution-inputs {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        .star-input-group {
+            text-align: center;
+        }
+        
+        .star-input-group label {
+            text-align: center;
+        }
+        
+        /* Print styles for the generated PDF */
+        @media print {
+            body {
+                background: white;
+                font-size: 12pt;
+            }
+            
+            .report-section {
+                page-break-inside: avoid;
+            }
+            
+            .graph-container {
+                max-height: 300px;
+                page-break-inside: avoid;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <header>
+            <h1>Google Maps Rating Analytics</h1>
+            <p class="subtitle">Calculate your path to higher star ratings and generate comprehensive reports</p>
+        </header>
+        
+        <div class="card">
+            <h2>Business Information</h2>
+            <div class="form-column">
+                <div class="form-group">
+                    <label for="mapsLink">Google Maps Business Link:</label>
+                    <input type="text" id="mapsLink" placeholder="Paste Google Maps link here (e.g., https://maps.google.com/...)">
+                </div>
+                
+                <div class="form-group">
+                    <label for="businessName">Business Name:</label>
+                    <input type="text" id="businessName" placeholder="Business name will be extracted from link (or enter manually)">
+                </div>
+            </div>
+            
+            <div class="form-column">
+                <div class="form-group">
+                    <label for="currentRating">Current Rating:</label>
+                    <input type="number" id="currentRating" min="1" max="5" step="0.1" placeholder="e.g., 3.2">
+                </div>
+                
+                <div class="form-group">
+                    <label for="reviewCount">Current Number of Reviews:</label>
+                    <input type="number" id="reviewCount" min="1" placeholder="e.g., 42">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="businessCategory">Business Category (for industry comparison):</label>
+                <select id="businessCategory">
+                    <option value="restaurant">Restaurant</option>
+                    <option value="hotel">Hotel or Accommodation</option>
+                    <option value="retail">Retail Store</option>
+                    <option value="service">Service Business</option>
+                    <option value="healthcare">Healthcare Provider</option>
+                    <option value="professional">Professional Services</option>
+                    <option value="beauty">Beauty & Wellness</option>
+                    <option value="automotive">Automotive</option>
+                    <option value="entertainment">Entertainment & Leisure</option>
+                    <option value="education">Education</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            
+            <!-- Advanced Options - Collapsible Section -->
+            <div class="section-collapsible">
+                <div class="section-header">
+                    <h3>Advanced Input Options</h3>
+                    <span class="toggle-icon">▼</span>
+                </div>
+                <div class="section-content">
+                    <div class="form-column">
+                        <div class="form-group">
+                            <label for="businessLocation">Business Location:</label>
+                            <input type="text" id="businessLocation" placeholder="e.g., New York, NY">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="businessWebsite">Business Website:</label>
+                            <input type="text" id="businessWebsite" placeholder="e.g., https://www.yourbusiness.com">
+                        </div>
+                    </div>
+                    
+                    <h3>Detailed Rating Distribution</h3>
+                    <p>Input the exact number of reviews for each star rating (optional):</p>
+                    
+                    <div class="star-distribution-inputs">
+                        <div class="star-input-group">
+                            <label for="star5Count">5 Stars</label>
+                            <input type="number" id="star5Count" min="0" placeholder="Count">
+                        </div>
+                        <div class="star-input-group">
+                            <label for="star4Count">4 Stars</label>
+                            <input type="number" id="star4Count" min="0" placeholder="Count">
+                        </div>
+                        <div class="star-input-group">
+                            <label for="star3Count">3 Stars</label>
+                            <input type="number" id="star3Count" min="0" placeholder="Count">
+                        </div>
+                        <div class="star-input-group">
+                            <label for="star2Count">2 Stars</label>
+                            <input type="number" id="star2Count" min="0" placeholder="Count">
+                        </div>
+                        <div class="star-input-group">
+                            <label for="star1Count">1 Star</label>
+                            <input type="number" id="star1Count" min="0" placeholder="Count">
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="competitorUrl">Top Competitor's Google Maps URL (optional):</label>
+                        <input type="text" id="competitorUrl" placeholder="Paste competitor's Google Maps link here">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="historicalRating">Previous Rating (6 months ago, if known):</label>
+                        <input type="number" id="historicalRating" min="1" max="5" step="0.1" placeholder="e.g., 3.0">
+                    </div>
+                </div>
+            </div>
+            
+            <button id="calculateBtn" class="btn btn-lg btn-block">Analyze Rating & Generate Report</button>
+            
+            <div id="loadingIndicator" class="loading">
+                <div class="spinner"></div>
+                <p>Analyzing data and generating reports...</p>
+            </div>
+            
+            <div id="extractionSuccess" class="alert alert-success hidden">
+                <p>Successfully extracted data from Google Maps URL!</p>
+            </div>
+            
+            <div id="errorMessage" class="alert alert-error hidden"></div>
+        </div>
+        
+        <div id="resultsContainer" class="hidden">
+            <div class="tabs" id="resultsTabs">
+                <div class="tab active" data-tab="analytics">Analytics Dashboard</div>
+                <div class="tab" data-tab="projections">Projections</div>
+                <div class="tab" data-tab="comparison">Industry Comparison</div>
+                <div class="tab" data-tab="reports">PDF Reports</div>
+            </div>
+            
+            <div class="tab-content active" id="analyticsTab">
+                <div class="card">
+                    <h2>Rating Analysis Results</h2>
+                    
+                    <div class="current-stats">
+                        <h3>Current Business Statistics</h3>
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-label">Current Rating</div>
+                                <div class="stat-value" id="displayCurrentRating">-</div>
+                                <div class="stat-label">stars</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Total Reviews</div>
+                                <div class="stat-value" id="displayReviewCount">-</div>
+                                <div class="stat-label">customer reviews</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Estimated Positive Reviews</div>
+                                <div class="stat-value" id="displayPositiveReviews">-</div>
+                                <div class="stat-label">4-5 star reviews</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Industry Average</div>
+                                <div class="stat-value" id="displayIndustryAvg">-</div>
+                                <div class="stat-label">stars</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <h3>Rating Distribution</h3>
+                    <div class="graph-container">
+                        <canvas id="ratingDistributionChart"></canvas>
+                    </div>
+                    
+                    <h3>5-Star Reviews Needed to Reach Target Ratings</h3>
+                    <table class="result-table">
+                        <thead>
+                            <tr>
+                                <th>Target Rating</th>
+                                <th>Additional 5-Star Reviews Needed</th>
+                                <th>Total Reviews After</th>
+                                <th>Estimated Time to Achieve</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsTable">
+                            <!-- Results will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="grid-2">
+                    <div class="card">
+                        <h3>Rating Progress Visualization</h3>
+                        <div class="graph-container">
+                            <canvas id="ratingProgressChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Reviews Needed per Target</h3>
+                        <div class="graph-container">
+                            <canvas id="reviewsNeededChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <h3>Automated Insights</h3>
+                    <div id="automatedInsights">
+                        <!-- Automated insights will be populated here -->
+                    </div>
+                </div>
+            </div>
+            
+            <div class="tab-content" id="projectionsTab">
+                <div class="card">
+                    <h2>Rating Projection & Timeline</h2>
+                    <div class="form-column">
+                        <div class="form-group">
+                            <label for="reviewRateInput">Expected new 5-star reviews per month:</label>
+                            <input type="number" id="reviewRateInput" min="1" value="5">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="projectionPeriod">Projection period (months):</label>
+                            <input type="number" id="projectionPeriod" min="1" max="36" value="12">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="negativeReviewRate">Expected negative review rate (%):</label>
+                            <input type="number" id="negativeReviewRate" min="0" max="100" value="10">
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="targetRatingSelect">Target rating for projection:</label>
+                            <select id="targetRatingSelect">
+                                <option value="3.5">3.5 stars</option>
+                                <option value="4.0">4.0 stars</option>
+                                <option value="4.3">4.3 stars</option>
+                                <option value="4.5">4.5 stars</option>
+                                <option value="4.7">4.7 stars</option>
+                                <option value="4.8">4.8 stars</option>
+                                <option value="4.9">4.9 stars</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <button id="updateProjectionBtn" class="btn">Update Projection</button>
+                    
+                    <div class="graph-container">
+                        <canvas id="timelineProjectionChart"></canvas>
+                    </div>
+                    
+                    <h3>Rating Milestones</h3>
+                    <table class="result-table">
+                        <thead>
+                            <tr>
+                                <th>Milestone</th>
+                                <th>Estimated Time</th>
+                                <th>Reviews Needed</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="milestonesTable">
+                            <!-- Milestones will be populated here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="tab-content" id="comparisonTab">
+                <div class="card">
+                    <h2>Industry Comparison</h2>
+                    <div class="graph-container">
+                        <canvas id="industryComparisonChart"></canvas>
+                    </div>
+                    
+                    <h3>Competitive Positioning</h3>
+                    <div class="graph-container">
+                        <canvas id="competitivePositioningChart"></canvas>
+                    </div>
+                    
+                    <h3>Rating Distribution Comparison</h3>
+                    <div class="graph-container">
+                        <canvas id="distributionComparisonChart"></canvas>
+                    </div>
+                    
+                    <div class="card">
+                        <h3>Competitive Advantage Analysis</h3>
+                        <div id="competitiveAnalysis">
+                            <!-- Competitive analysis will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="tab-content" id="reportsTab">
+                <div class="card">
+                    <h2>Generate PDF Report</h2>
+                    <p>Select a report template to generate a downloadable PDF document with your rating analysis:</p>
+                    
+                    <div class="report-templates">
+                        <div class="template-option selected" data-template="basic">
+                            <div class="template-preview">
+                                <div class="preview-basic">
+                                    RATING ANALYSIS REPORT
+                                    -------------------
+                                    Business: Example
+                                    Current Rating: 3.5
+                                    Reviews: 42
+                                    
+                                    TARGETS:
+                                    4.0 stars: +25 reviews
+                                    4.5 stars: +60 reviews
+                                </div>
+                            </div>
+                            <div class="template-name">Basic Report</div>
+                        </div>
+                        
+                        <div class="template-option" data-template="professional">
+                            <div class="template-preview">
+                                <div class="preview-professional"></div>
+                            </div>
+                            <div class="template-name">Professional</div>
+                        </div>
+                        
+                        <div class="template-option" data-template="data">
+                            <div class="template-preview">
+                                <div class="preview-data">
+                                    <div class="preview-data-item" style="width: 70%"></div>
+                                    <div class="preview-data-item" style="width: 85%"></div>
+                                    <div class="preview-data-item" style="width: 60%"></div>
+                                    <div class="preview-data-graph"></div>
+                                </div>
+                            </div>
+                            <div class="template-name">Data-Focused</div>
+                        </div>
+                        
+                        <div class="template-option" data-template="advanced">
+                            <div class="template-preview">
+                                <div class="preview-professional" style="background: linear-gradient(135deg, var(--primary-color), var(--secondary-color) 80%);"></div>
+                            </div>
+                            <div class="template-name">Advanced</div>
+                        </div>
+                    </div>
+                    
+                    <!-- PDF Options Section -->
+                    <div class="section-collapsible">
+                        <div class="section-header">
+                            <h3>PDF Options & Customization</h3>
+                            <span class="toggle-icon">▼</span>
+                        </div>
+                        <div class="section-content">
+                            <div class="form-column">
+                                <div class="form-group">
+                                    <label for="reportTitle">Report Title:</label>
+                                    <input type="text" id="reportTitle" placeholder="e.g., Google Maps Rating Analysis for [Business Name]">
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="reportDate">Report Date:</label>
+                                    <input type="date" id="reportDate">
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="reportRecipient">Report Recipient (optional):</label>
+                                <input type="text" id="reportRecipient" placeholder="e.g., Marketing Team or Client Name">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="companyLogo">Company Logo URL (optional):</label>
+                                <input type="text" id="companyLogo" placeholder="e.g., https://yourbusiness.com/logo.png">
+                            </div>
+                            
+                            <h3>Report Sections</h3>
+                            <div class="checkbox-group">
+                                <div class="checkbox-item">
+                                    <input type="checkbox" id="includeExecutiveSummary" checked>
+                                    <label for="includeExecutiveSummary">Include Executive Summary</label>
+                                </div>
+                                <div class="checkbox-item">
+                                    <input type="checkbox" id="includeDistributionAnalysis" checked>
+                                    <label for="includeDistributionAnalysis">Include Rating Distribution Analysis</label>
+                                </div>
+                                <div class="checkbox-item">
+                                    <input type="checkbox" id="includeProjections" checked>
+                                    <label for="includeProjections">Include Projections & Timeline</label>
+                                </div>
+                                <div class="checkbox-item">
+                                    <input type="checkbox" id="includeIndustryComparison" checked>
+                                    <label for="includeIndustryComparison">Include Industry Comparison</label>
+                                </div>
+                                <div class="checkbox-item">
+                                    <input type="checkbox" id="includeRecommendations" checked>
+                                    <label for="includeRecommendations">Include Strategic Recommendations</label>
+                                </div>
+                                <div class="checkbox-item">
+                                    <input type="checkbox" id="includeContactInfo">
+                                    <label for="includeContactInfo">Include Contact Information</label>
+                                </div>
+                            </div>
+                            
+                            <div id="contactInfoFields" class="hidden">
+                                <div class="form-column">
+                                    <div class="form-group">
+                                        <label for="contactName">Contact Name:</label>
+                                        <input type="text" id="contactName" placeholder="e.g., John Smith">
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label for="contactEmail">Contact Email:</label>
+                                        <input type="email" id="contactEmail" placeholder="e.g., john@example.com">
+                                    </div>
+                                    
+                                    <div class="form-group">
+                                        <label for="contactPhone">Contact Phone:</label>
+                                        <input type="text" id="contactPhone" placeholder="e.g., (555) 123-4567">
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <h3>PDF Format Options</h3>
+                            <div class="form-column">
+                                <div class="form-group">
+                                    <label for="pdfFormat">Paper Size:</label>
+                                    <select id="pdfFormat">
+                                        <option value="a4">A4 (210 × 297 mm)</option>
+                                        <option value="letter">Letter (8.5 × 11 in)</option>
+                                        <option value="legal">Legal (8.5 × 14 in)</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-group">
+                                    <label for="pdfOrientation">Orientation:</label>
+                                    <select id="pdfOrientation">
+                                        <option value="portrait">Portrait</option>
+                                        <option value="landscape">Landscape</option>
+                                    </select>
+                                </div>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label>Include Page Numbers:</label>
+                                <div class="checkbox-item">
+                                    <input type="checkbox" id="includePageNumbers" checked>
+                                    <label for="includePageNumbers">Add page numbers to PDF</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button id="generatePdfBtn" class="btn btn-success btn-lg">Generate PDF Report</button>
+                        <button id="printReportBtn" class="btn">Print Report</button>
+                    </div>
+                    
+                    <div class="pdf-preview">
+                        <div id="pdfPreview">
+                            <!-- PDF preview content will be generated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize variables
+            const jspdf = window.jspdf;
+            const { jsPDF } = jspdf;
+            
+            // DOM Elements
+            const mapsLinkInput = document.getElementById('mapsLink');
+            const businessNameInput = document.getElementById('businessName');
+            const currentRatingInput = document.getElementById('currentRating');
+            const reviewCountInput = document.getElementById('reviewCount');
+            const businessCategorySelect = document.getElementById('businessCategory');
+            const calculateBtn = document.getElementById('calculateBtn');
+            const loadingIndicator = document.getElementById('loadingIndicator');
+            const errorMessage = document.getElementById('errorMessage');
+            const extractionSuccess = document.getElementById('extractionSuccess');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const resultsTable = document.getElementById('resultsTable');
+            const displayCurrentRatingSpan = document.getElementById('displayCurrentRating');
+            const displayReviewCountSpan = document.getElementById('displayReviewCount');
+            const displayPositiveReviews = document.getElementById('displayPositiveReviews');
+            const displayIndustryAvg = document.getElementById('displayIndustryAvg');
+            const reviewRateInput = document.getElementById('reviewRateInput');
+            const projectionPeriodInput = document.getElementById('projectionPeriod');
+            const negativeReviewRateInput = document.getElementById('negativeReviewRate');
+            const targetRatingSelect = document.getElementById('targetRatingSelect');
+            const updateProjectionBtn = document.getElementById('updateProjectionBtn');
+            const generatePdfBtn = document.getElementById('generatePdfBtn');
+            const printReportBtn = document.getElementById('printReportBtn');
+            const pdfPreview = document.getElementById('pdfPreview');
+            const milestonesTable = document.getElementById('milestonesTable');
+            const automatedInsights = document.getElementById('automatedInsights');
+            const competitiveAnalysis = document.getElementById('competitiveAnalysis');
+            
+            // Star distribution inputs
+            const star5CountInput = document.getElementById('star5Count');
+            const star4CountInput = document.getElementById('star4Count');
+            const star3CountInput = document.getElementById('star3Count');
+            const star2CountInput = document.getElementById('star2Count');
+            const star1CountInput = document.getElementById('star1Count');
+            
+            // PDF Options
+            const reportTitleInput = document.getElementById('reportTitle');
+            const reportDateInput = document.getElementById('reportDate');
+            const includeContactInfoCheckbox = document.getElementById('includeContactInfo');
+            const contactInfoFields = document.getElementById('contactInfoFields');
+            
+            // Initialize report date to today
+            const today = new Date();
+            reportDateInput.value = today.toISOString().split('T')[0];
+            
+            // Chart objects
+            let ratingProgressChart;
+            let reviewsNeededChart;
+            let ratingDistributionChart;
+            let industryComparisonChart;
+            let timelineProjectionChart;
+            let competitivePositioningChart;
+            let distributionComparisonChart;
+            
+            // Analysis results
+            let analysisResults = {};
+            let selectedTemplate = 'basic';
+            
+            // Industry average ratings (fictional data for demonstration)
+            const industryAverages = {
+                'restaurant': 4.2,
+                'hotel': 4.3,
+                'retail': 4.0,
+                'service': 4.1,
+                'healthcare': 4.4,
+                'professional': 4.5,
+                'beauty': 4.1,
+                'automotive': 3.9,
+                'entertainment': 4.3,
+                'education': 4.2,
+                'other': 4.1
+            };
+            
+            // Toggle collapsible sections
+            document.querySelectorAll('.section-header').forEach(header => {
+                header.addEventListener('click', function() {
+                    this.classList.toggle('active');
+                    
+                    // Toggle the visibility of the next sibling (content section)
+                    const content = this.nextElementSibling;
+                    if (content.style.display === 'block') {
+                        content.style.display = 'none';
+                    } else {
+                        content.style.display = 'block';
+                    }
+                });
+            });
+            
+            // Contact info checkbox toggling
+            includeContactInfoCheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    contactInfoFields.classList.remove('hidden');
+                } else {
+                    contactInfoFields.classList.add('hidden');
+                }
+            });
+
+            // Extract business info from Google Maps URL
+            mapsLinkInput.addEventListener('blur', function() {
+                const url = mapsLinkInput.value.trim();
+                if (url) {
+                    try {
+                        // Hide any previous extraction success message
+                        extractionSuccess.classList.add('hidden');
+                        
+                        // Extract business name from Google Maps URL patterns
+                        let businessName = '';
+                        let reviewCount = null;
+                        let rating = null;
+                        
+                        // Try to match different Google Maps URL patterns
+                        // Pattern 1: .../maps/place/[Business Name]/...
+                        const placeMatch = url.match(/\/maps\/place\/([^\/]+)/);
+                        if (placeMatch && placeMatch[1]) {
+                            businessName = decodeURIComponent(placeMatch[1].replace(/\+/g, ' '));
+                            
+                            // If we found a business name, clean it up
+                            if (businessName) {
+                                // Remove location data that might be at the end (e.g., "@37.7749,-122.4194,...")
+                                businessName = businessName.split('@')[0];
+                                
+                                // Remove any trailing commas, numbers, or address fragments
+                                businessName = businessName.replace(/,[^,]*\d[^,]*$/, '');
+                                
+                                // Set the business name input
+                                businessNameInput.value = businessName;
+                            }
+                        }
+                        
+                        // Extract rating and review count from URL
+                        // Pattern: .../maps/place/.../(x.x)+(stars)+|(y)+[reviews]
+                        const ratingMatch = url.match(/([\d.]+) star(?:s)?/i);
+                        const reviewMatch = url.match(/([\d,]+) review(?:s)?/i);
+                        
+                        if (ratingMatch && ratingMatch[1]) {
+                            rating = parseFloat(ratingMatch[1]);
+                            currentRatingInput.value = rating;
+                        }
+                        
+                        if (reviewMatch && reviewMatch[1]) {
+                            // Remove commas from review count
+                            reviewCount = parseInt(reviewMatch[1].replace(/,/g, ''));
+                            reviewCountInput.value = reviewCount;
+                        }
+                        
+                        // If URL doesn't contain rating/reviews directly, try to fetch it (simulation)
+                        // In a real implementation, this would use fetch API or similar to get data
+                        if (!rating || !reviewCount) {
+                            // Simulate extracting from URL - For demo purposes only
+                            // In a real app, you'd make an API call or use web scraping
+                            if (url.includes('google.com/maps')) {
+                                // Generate mock data for demonstration
+                                if (!rating) {
+                                    rating = (Math.random() * 2 + 3).toFixed(1); // Random between 3.0-5.0
+                                    currentRatingInput.value = rating;
+                                }
+                                
+                                if (!reviewCount) {
+                                    reviewCount = Math.floor(Math.random() * 500) + 50; // Random between 50-550
+                                    reviewCountInput.value = reviewCount;
+                                }
+                            }
+                        }
+                        
+                        // Show success message if we extracted something useful
+                        if (businessName || rating || reviewCount) {
+                            extractionSuccess.classList.remove('hidden');
+                            setTimeout(() => {
+                                extractionSuccess.classList.add('hidden');
+                            }, 3000);
+                        }
+                        
+                    } catch(e) {
+                        // If URL parsing fails, don't change anything
+                        console.error('Error parsing business information from URL:', e);
+                    }
+                }
+            });
+            
+            // Auto-calculate total reviews from star distribution inputs
+            function updateTotalReviewsFromDistribution() {
+                const star5 = parseInt(star5CountInput.value) || 0;
+                const star4 = parseInt(star4CountInput.value) || 0;
+                const star3 = parseInt(star3CountInput.value) || 0;
+                const star2 = parseInt(star2CountInput.value) || 0;
+                const star1 = parseInt(star1CountInput.value) || 0;
+                
+                const totalReviews = star5 + star4 + star3 + star2 + star1;
+                
+                if (totalReviews > 0) {
+                    reviewCountInput.value = totalReviews;
+                    
+                    // Calculate weighted average rating
+                    const totalPoints = (star5 * 5) + (star4 * 4) + (star3 * 3) + (star2 * 2) + (star1 * 1);
+                    const avgRating = totalPoints / totalReviews;
+                    
+                    currentRatingInput.value = avgRating.toFixed(1);
+                }
+            }
+            
+            // Add event listeners to star distribution inputs
+            [star5CountInput, star4CountInput, star3CountInput, star2CountInput, star1CountInput].forEach(input => {
+                input.addEventListener('input', updateTotalReviewsFromDistribution);
+            });
+            
+            // Handle tab switching
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', function() {
+                    // Remove active class from all tabs
+                    document.querySelectorAll('.tab').forEach(t => {
+                        t.classList.remove('active');
+                    });
+                    
+                    // Add active class to clicked tab
+                    this.classList.add('active');
+                    
+                    // Hide all tab contents
+                    document.querySelectorAll('.tab-content').forEach(content => {
+                        content.classList.remove('active');
+                    });
+                    
+                    // Show the corresponding tab content
+                    const tabId = this.getAttribute('data-tab');
+                    document.getElementById(tabId + 'Tab').classList.add('active');
+                });
+            });
+            
+            // Handle template selection
+            document.querySelectorAll('.template-option').forEach(option => {
+                option.addEventListener('click', function() {
+                    // Remove selected class from all templates
+                    document.querySelectorAll('.template-option').forEach(t => {
+                        t.classList.remove('selected');
+                    });
+                    
+                    // Add selected class to clicked template
+                    this.classList.add('selected');
+                    
+                    // Update selected template
+                    selectedTemplate = this.getAttribute('data-template');
+                    
+                    // Update PDF preview
+                    if (analysisResults.businessName) {
+                        updatePdfPreview();
+                    }
+                });
+            });
+            
+            // Analysis calculation
+            calculateBtn.addEventListener('click', function() {
+                // Reset any previous errors
+                errorMessage.classList.add('hidden');
+                errorMessage.textContent = '';
+                
+                // Get input values
+                const mapsLink = mapsLinkInput.value.trim();
+                const businessName = businessNameInput.value.trim();
+                const currentRating = parseFloat(currentRatingInput.value);
+                const reviewCount = parseInt(reviewCountInput.value);
+                const businessCategory = businessCategorySelect.value;
+                
+                // Get advanced input values
+                const businessLocation = document.getElementById('businessLocation').value.trim();
+                const businessWebsite = document.getElementById('businessWebsite').value.trim();
+                const competitorUrl = document.getElementById('competitorUrl').value.trim();
+                const historicalRating = parseFloat(document.getElementById('historicalRating').value) || null;
+                
+                // Get star distribution if provided
+                let manualDistribution = null;
+                const star5 = parseInt(star5CountInput.value) || 0;
+                const star4 = parseInt(star4CountInput.value) || 0; 
+                const star3 = parseInt(star3CountInput.value) || 0;
+                const star2 = parseInt(star2CountInput.value) || 0;
+                const star1 = parseInt(star1CountInput.value) || 0;
+                
+                const totalManualStars = star5 + star4 + star3 + star2 + star1;
+                if (totalManualStars > 0) {
+                    if (totalManualStars !== reviewCount) {
+                        showError(`The sum of individual star ratings (${totalManualStars}) doesn't match your total review count (${reviewCount}). Please check your numbers.`);
+                        return;
+                    }
+                    
+                    manualDistribution = [
+                        star1 / totalManualStars, // 1 star percentage
+                        star2 / totalManualStars, // 2 stars percentage
+                        star3 / totalManualStars, // 3 stars percentage
+                        star4 / totalManualStars, // 4 stars percentage
+                        star5 / totalManualStars  // 5 stars percentage
+                    ];
+                }
+                
+                // Validate inputs
+                if (!businessName) {
+                    showError('Please enter a business name.');
+                    return;
+                }
+                
+                if (isNaN(currentRating) || currentRating < 1 || currentRating > 5) {
+                    showError('Please enter a valid current rating between 1 and 5.');
+                    return;
+                }
+                
+                if (isNaN(reviewCount) || reviewCount < 1) {
+                    showError('Please enter a valid number of reviews (greater than 0).');
+                    return;
+                }
+                
+                // Set default report title if empty
+                if (!reportTitleInput.value) {
+                    reportTitleInput.value = `Google Maps Rating Analysis for ${businessName}`;
+                }
+                
+                // Show loading indicator
+                loadingIndicator.style.display = 'block';
+                
+                // Simulate data processing and analysis
+                setTimeout(function() {
+                    // Calculate and display results
+                    calculateResults(
+                        businessName, 
+                        currentRating, 
+                        reviewCount, 
+                        businessCategory, 
+                        businessLocation, 
+                        businessWebsite,
+                        historicalRating,
+                        manualDistribution
+                    );
+                    
+                    // Hide loading and show results
+                    loadingIndicator.style.display = 'none';
+                    resultsContainer.classList.remove('hidden');
+                    
+                    // Generate charts
+                    generateCharts();
+                    
+                    // Generate insights
+                    generateAutomatedInsights();
+                    
+                    // Generate competitive analysis
+                    generateCompetitiveAnalysis();
+                    
+                    // Update milestones table
+                    updateMilestonesTable();
+                    
+                    // Prepare PDF preview
+                    updatePdfPreview();
+                    
+                }, 1500); // Simulate processing time
+            });
+            
+            // Update projection chart when parameters change
+            updateProjectionBtn.addEventListener('click', function() {
+                const reviewRate = parseInt(reviewRateInput.value) || 5;
+                const projectionPeriod = parseInt(projectionPeriodInput.value) || 12;
+                const negativeReviewRate = parseInt(negativeReviewRateInput.value) || 10;
+                const targetRating = parseFloat(targetRatingSelect.value) || 4.0;
+                
+                updateTimelineProjection(reviewRate, projectionPeriod, negativeReviewRate, targetRating);
+                updateMilestonesTable();
+            });
+            
+            // Generate PDF report
+            generatePdfBtn.addEventListener('click', function() {
+                generatePDF();
+            });
+            
+            // Print report
+            printReportBtn.addEventListener('click', function() {
+                window.print();
+            });
+            
+            // Function to show error message
+            function showError(message) {
+                errorMessage.textContent = message;
+                errorMessage.classList.remove('hidden');
+            }
+            
+            // Calculate results
+            function calculateResults(
+                businessName, 
+                currentRating, 
+                reviewCount, 
+                businessCategory, 
+                businessLocation = '', 
+                businessWebsite = '',
+                historicalRating = null,
+                manualDistribution = null
+            ) {
+                // Target ratings to calculate for
+                const targetRatings = [3.5, 4.0, 4.3, 4.5, 4.7, 4.8, 4.9, 5.0];
+                const results = [];
+                
+                // Calculate estimated existing rating distribution
+                const estimatedRatingDistribution = manualDistribution || 
+                    calculateEstimatedDistribution(currentRating, reviewCount);
+                
+                // Industry comparison
+                const industryAverage = industryAverages[businessCategory] || 4.1;
+                
+                // Estimate positive reviews (4-5 stars)
+                const estimatedPositiveReviews = Math.round(
+                    (estimatedRatingDistribution[3] + estimatedRatingDistribution[4]) * reviewCount
+                );
+                
+                // Calculate rating volatility
+                const ratingVolatility = calculateRatingVolatility(currentRating, reviewCount);
+                
+                // Calculate rating growth (if historical data provided)
+                let ratingGrowth = null;
+                if (historicalRating) {
+                    ratingGrowth = currentRating - historicalRating;
+                }
+                
+                // Calculate needed reviews for each target
+                for (const targetRating of targetRatings) {
+                    // Skip targets at or below current rating
+                    if (targetRating <= currentRating) {
+                        results.push({
+                            targetRating: targetRating,
+                            reviewsNeeded: 0,
+                            totalReviews: reviewCount,
+                            timeToAchieve: '0 months',
+                            alreadyAchieved: true
+                        });
+                        continue;
+                    }
+                    
+                    // Formula: X = (R × N - T × N) ÷ (T - 5)
+                    // Where:
+                    // X = number of 5-star reviews needed
+                    // N = current number of reviews
+                    // R = current average rating
+                    // T = target rating
+                    const reviewsNeeded = Math.ceil(
+                        (currentRating * reviewCount - targetRating * reviewCount) / (5 - targetRating)
+                    );
+                    
+                    const totalReviews = reviewCount + reviewsNeeded;
+                    
+                    // Estimate time to achieve (assuming 5 five-star reviews per month by default)
+                    const monthsToAchieve = Math.ceil(reviewsNeeded / 5);
+                    const timeToAchieve = monthsToAchieve <= 1 
+                        ? '1 month'
+                        : `${monthsToAchieve} months`;
+                    
+                    results.push({
+                        targetRating,
+                        reviewsNeeded,
+                        totalReviews,
+                        timeToAchieve,
+                        alreadyAchieved: false
+                    });
+                }
+                
+                // Store analysis results
+                analysisResults = {
+                    businessName,
+                    currentRating,
+                    reviewCount,
+                    businessCategory,
+                    businessLocation,
+                    businessWebsite,
+                    industryAverage,
+                    estimatedPositiveReviews,
+                    estimatedRatingDistribution,
+                    ratingVolatility,
+                    ratingGrowth,
+                    historicalRating,
+                    targetResults: results
+                };
+                
+                // Update the results table
+                updateResultsTable(results);
+                
+                // Update the statistics display
+                displayCurrentRatingSpan.textContent = currentRating.toFixed(1);
+                displayReviewCountSpan.textContent = reviewCount.toLocaleString();
+                displayPositiveReviews.textContent = estimatedPositiveReviews.toLocaleString();
+                displayIndustryAvg.textContent = industryAverage.toFixed(1);
+            }
+            
+            // Calculate rating volatility
+            function calculateRatingVolatility(currentRating, reviewCount) {
+                // Impact of a single 5-star review on overall rating
+                const impactOf5Star = (5 - currentRating) / (reviewCount + 1);
+                
+                // Impact of a single 1-star review on overall rating
+                const impactOf1Star = (currentRating - 1) / (reviewCount + 1);
+                
+                // Average impact per review
+                const averageImpact = (impactOf5Star + impactOf1Star) / 2;
+                
+                // Normalize to a 0-100 scale where higher means more volatile
+                let volatility = 100 * averageImpact;
+                
+                // Cap at 100
+                volatility = Math.min(volatility, 100);
+                
+                return volatility;
+            }
+            
+            // Update results table with calculated data
+            function updateResultsTable(results) {
+                let tableHTML = '';
+                
+                for (const result of results) {
+                    const targetClass = result.alreadyAchieved ? 'text-success' : '';
+                    
+                    tableHTML += `
+                        <tr>
+                            <td>${result.targetRating.toFixed(1)} ⭐</td>
+                            <td>${result.alreadyAchieved 
+                                ? '<span style="color: green;">Already achieved</span>' 
+                                : result.reviewsNeeded.toLocaleString()}</td>
+                            <td>${result.totalReviews.toLocaleString()}</td>
+                            <td>${result.alreadyAchieved 
+                                ? '-' 
+                                : result.timeToAchieve}</td>
+                        </tr>
+                    `;
+                }
+                
+                resultsTable.innerHTML = tableHTML;
+            }
+            
+            // Calculate estimated distribution of ratings based on average
+            function calculateEstimatedDistribution(averageRating, totalReviews) {
+                // This is a simplified estimation model - in reality, rating distributions
+                // are often skewed rather than normal, but this gives a reasonable approximation
+                
+                // Convert from 1-5 scale to 0-4 index for array
+                const normalizedRating = averageRating - 1;
+                
+                // Create initial distribution (percentages)
+                const distribution = [0, 0, 0, 0, 0];
+                
+                // Different models based on rating range
+                if (averageRating >= 4.5) {
+                    // Excellent ratings - very positive skew
+                    distribution[4] = 0.80; // 5 stars
+                    distribution[3] = 0.15; // 4 stars
+                    distribution[2] = 0.03; // 3 stars
+                    distribution[1] = 0.01; // 2 stars
+                    distribution[0] = 0.01; // 1 star
+                } else if (averageRating >= 4.0) {
+                    // Very good ratings - positive skew
+                    distribution[4] = 0.60; // 5 stars
+                    distribution[3] = 0.25; // 4 stars
+                    distribution[2] = 0.10; // 3 stars
+                    distribution[1] = 0.03; // 2 stars
+                    distribution[0] = 0.02; // 1 star
+                } else if (averageRating >= 3.5) {
+                    // Good ratings - slight positive skew
+                    distribution[4] = 0.40; // 5 stars
+                    distribution[3] = 0.30; // 4 stars
+                    distribution[2] = 0.15; // 3 stars
+                    distribution[1] = 0.10; // 2 stars
+                    distribution[0] = 0.05; // 1 star
+                } else if (averageRating >= 3.0) {
+                    // Average ratings - balanced
+                    distribution[4] = 0.25; // 5 stars
+                    distribution[3] = 0.30; // 4 stars
+                    distribution[2] = 0.25; // 3 stars
+                    distribution[1] = 0.15; // 2 stars
+                    distribution[0] = 0.05; // 1 star
+                } else if (averageRating >= 2.5) {
+                    // Below average - negative skew
+                    distribution[4] = 0.15; // 5 stars
+                    distribution[3] = 0.25; // 4 stars
+                    distribution[2] = 0.30; // 3 stars
+                    distribution[1] = 0.20; // 2 stars
+                    distribution[0] = 0.10; // 1 star
+                } else if (averageRating >= 2.0) {
+                    // Poor ratings - strong negative skew
+                    distribution[4] = 0.10; // 5 stars
+                    distribution[3] = 0.15; // 4 stars
+                    distribution[2] = 0.25; // 3 stars
+                    distribution[1] = 0.30; // 2 stars
+                    distribution[0] = 0.20; // 1 star
+                } else {
+                    // Very poor ratings - very strong negative skew
+                    distribution[4] = 0.05; // 5 stars
+                    distribution[3] = 0.10; // 4 stars
+                    distribution[2] = 0.15; // 3 stars
+                    distribution[1] = 0.20; // 2 stars
+                    distribution[0] = 0.50; // 1 star
+                }
+                
+                // Adjust to ensure the average matches the input average
+                // Calculate current average of our distribution
+                let currentAvg = 0;
+                for (let i = 0; i < 5; i++) {
+                    currentAvg += distribution[i] * (i + 1);
+                }
+                
+                // Adjust if needed (simple linear adjustment)
+                if (Math.abs(currentAvg - averageRating) > 0.01) {
+                    const adjustment = (averageRating - currentAvg) / 4;
+                    
+                    // Apply adjustment, keeping values between 0 and 1
+                    for (let i = 0; i < 5; i++) {
+                        distribution[i] += adjustment * (i + 1 - currentAvg);
+                        distribution[i] = Math.max(0, Math.min(1, distribution[i]));
+                    }
+                    
+                    // Normalize to ensure percentages sum to 1
+                    const sum = distribution.reduce((a, b) => a + b, 0);
+                    for (let i = 0; i < 5; i++) {
+                        distribution[i] /= sum;
+                    }
+                }
+                
+                return distribution;
+            }
+            
+            // Generate all charts
+            function generateCharts() {
+                generateRatingProgressChart();
+                generateReviewsNeededChart();
+                generateRatingDistributionChart();
+                generateIndustryComparisonChart();
+                generateCompetitivePositioningChart();
+                generateDistributionComparisonChart();
+                
+                // Initialize projection with default values
+                const reviewRate = parseInt(reviewRateInput.value) || 5;
+                const projectionPeriod = parseInt(projectionPeriodInput.value) || 12;
+                const negativeReviewRate = parseInt(negativeReviewRateInput.value) || 10;
+                const targetRating = parseFloat(targetRatingSelect.value) || 4.0;
+                
+                updateTimelineProjection(reviewRate, projectionPeriod, negativeReviewRate, targetRating);
+            }
+            
+            // Generate automated insights
+            function generateAutomatedInsights() {
+                const { 
+                    currentRating, 
+                    reviewCount, 
+                    businessCategory, 
+                    industryAverage,
+                    estimatedRatingDistribution,
+                    ratingVolatility,
+                    ratingGrowth,
+                    historicalRating,
+                    targetResults 
+                } = analysisResults;
+                
+                let insightsHTML = '<div class="callout">';
+                
+                // Rating performance insight
+                insightsHTML += '<div class="callout-title">Rating Performance</div>';
+                if (currentRating >= 4.5) {
+                    insightsHTML += `<p>Your rating of ${currentRating.toFixed(1)} stars is excellent and places you among the top-rated businesses in your category. This is a significant competitive advantage.</p>`;
+                } else if (currentRating >= 4.0) {
+                    insightsHTML += `<p>Your rating of ${currentRating.toFixed(1)} stars is very good. It's ${currentRating > industryAverage ? 'above' : 'slightly below'} the industry average of ${industryAverage.toFixed(1)} for ${businessCategory} businesses.</p>`;
+                } else if (currentRating >= 3.5) {
+                    insightsHTML += `<p>Your rating of ${currentRating.toFixed(1)} stars is acceptable but offers room for improvement. The industry average for ${businessCategory} businesses is ${industryAverage.toFixed(1)} stars.</p>`;
+                } else {
+                    insightsHTML += `<p>Your rating of ${currentRating.toFixed(1)} stars is below the industry average of ${industryAverage.toFixed(1)} for ${businessCategory} businesses. Focused improvement efforts are recommended.</p>`;
+                }
+                
+                // Historical trend insight (if available)
+                if (historicalRating) {
+                    insightsHTML += '<div class="callout-title">Rating Trend</div>';
+                    if (ratingGrowth > 0.2) {
+                        insightsHTML += `<p>Your rating has improved significantly by ${ratingGrowth.toFixed(1)} stars over the recent period. This positive trend indicates effective customer experience improvements.</p>`;
+                    } else if (ratingGrowth > 0) {
+                        insightsHTML += `<p>Your rating has improved slightly by ${ratingGrowth.toFixed(1)} stars. Continued consistent effort should yield further improvements.</p>`;
+                    } else if (ratingGrowth >= -0.1) {
+                        insightsHTML += `<p>Your rating has remained relatively stable compared to the previous period. Consider implementing new strategies to drive improvement.</p>`;
+                    } else {
+                        insightsHTML += `<p>Your rating has declined by ${Math.abs(ratingGrowth).toFixed(1)} stars. Immediate action is recommended to identify and address customer satisfaction issues.</p>`;
+                    }
+                }
+                
+                // Review volume insight
+                insightsHTML += '<div class="callout-title">Review Volume</div>';
+                if (reviewCount > 500) {
+                    insightsHTML += `<p>With ${reviewCount.toLocaleString()} reviews, your business has a robust review profile that provides statistical credibility to your rating.</p>`;
+                } else if (reviewCount > 100) {
+                    insightsHTML += `<p>Your ${reviewCount.toLocaleString()} reviews provide a good foundation, but increasing this volume would strengthen your online presence.</p>`;
+                } else if (reviewCount > 50) {
+                    insightsHTML += `<p>Your review count of ${reviewCount.toLocaleString()} is moderate. Actively encouraging more reviews would improve the statistical reliability of your rating.</p>`;
+                } else {
+                    insightsHTML += `<p>With only ${reviewCount.toLocaleString()} reviews, your rating can change significantly with just a few new reviews. Increasing review volume should be a priority.</p>`;
+                }
+                
+                // Rating volatility insight
+                insightsHTML += '<div class="callout-title">Rating Stability</div>';
+                if (ratingVolatility < 1) {
+                    insightsHTML += `<p>Your rating is very stable due to your high review count. Each new review has minimal impact on your overall rating.</p>`;
+                } else if (ratingVolatility < 5) {
+                    insightsHTML += `<p>Your rating has good stability. A single 1-star review would only decrease your rating by approximately ${(ratingVolatility/100).toFixed(3)} points.</p>`;
+                } else if (ratingVolatility < 10) {
+                    insightsHTML += `<p>Your rating has moderate volatility. Each new negative review can impact your rating by up to ${(ratingVolatility/100).toFixed(2)} points.</p>`;
+                } else {
+                    insightsHTML += `<p>Your rating is highly volatile due to your low review count. Each new review significantly impacts your overall rating.</p>`;
+                }
+                
+                // Distribution analysis
+                insightsHTML += '<div class="callout-title">Rating Distribution</div>';
+                const positivePercentage = ((estimatedRatingDistribution[3] + estimatedRatingDistribution[4]) * 100).toFixed(1);
+                const negativePercentage = ((estimatedRatingDistribution[0] + estimatedRatingDistribution[1]) * 100).toFixed(1);
+                
+                if (parseInt(negativePercentage) > 20) {
+                    insightsHTML += `<p>Your negative review percentage (${negativePercentage}%) is concerning. Prioritize addressing common issues mentioned in 1-2 star reviews.</p>`;
+                } else if (parseInt(positivePercentage) > 80) {
+                    insightsHTML += `<p>With ${positivePercentage}% positive reviews, you're successfully delivering excellent experiences to most customers.</p>`;
+                } else {
+                    insightsHTML += `<p>Your rating distribution shows a mix of positive (${positivePercentage}%) and negative (${negativePercentage}%) experiences. Focus on converting neutral 3-star reviewers to 5-star advocates.</p>`;
+                }
+                
+                // Next milestone insight
+                const nextTarget = targetResults.find(result => !result.alreadyAchieved);
+                if (nextTarget) {
+                    insightsHTML += '<div class="callout-title">Next Rating Milestone</div>';
+                    insightsHTML += `<p>To reach ${nextTarget.targetRating.toFixed(1)} stars, you need ${nextTarget.reviewsNeeded} additional 5-star reviews. At a rate of 5 new positive reviews per month, this would take approximately ${nextTarget.timeToAchieve}.</p>`;
+                }
+                
+                insightsHTML += '</div>';
+                automatedInsights.innerHTML = insightsHTML;
+            }
+            
+            // Generate competitive analysis
+            function generateCompetitiveAnalysis() {
+                const { 
+                    currentRating, 
+                    reviewCount, 
+                    businessCategory, 
+                    industryAverage
+                } = analysisResults;
+                
+                let analysisHTML = '';
+                
+                // Competitive strengths and weaknesses
+                analysisHTML += '<div class="callout">';
+                analysisHTML += '<div class="callout-title">Competitive Position Analysis</div>';
+                
+                // Rating position
+                if (currentRating > industryAverage + 0.3) {
+                    analysisHTML += `<p><strong>Strength:</strong> Your rating of ${currentRating.toFixed(1)} stars is significantly above the industry average of ${industryAverage.toFixed(1)}. This is a strong competitive advantage.</p>`;
+                } else if (currentRating > industryAverage) {
+                    analysisHTML += `<p><strong>Strength:</strong> Your rating is slightly above the industry average, which positions you favorably against competitors.</p>`;
+                } else if (currentRating > industryAverage - 0.3) {
+                    analysisHTML += `<p><strong>Area for Improvement:</strong> Your rating is slightly below the industry average. Focused improvements could quickly position you above competitors.</p>`;
+                } else {
+                    analysisHTML += `<p><strong>Critical Gap:</strong> Your rating lags behind the industry average by ${(industryAverage - currentRating).toFixed(1)} stars, creating a significant competitive disadvantage.</p>`;
+                }
+                
+                // Review volume analysis
+                const averageReviews = businessCategory === 'restaurant' ? 150 : 
+                                      businessCategory === 'hotel' ? 200 :
+                                      businessCategory === 'retail' ? 100 : 120;
+                
+                if (reviewCount > averageReviews * 2) {
+                    analysisHTML += `<p><strong>Strength:</strong> Your review volume is exceptional for your industry, providing credibility and prominence in search results.</p>`;
+                } else if (reviewCount > averageReviews) {
+                    analysisHTML += `<p><strong>Strength:</strong> Your review count exceeds the typical volume for your industry, enhancing your visibility.</p>`;
+                } else if (reviewCount > averageReviews * 0.5) {
+                    analysisHTML += `<p><strong>Area for Improvement:</strong> Your review count is adequate but below industry leaders. Actively soliciting more reviews would improve your positioning.</p>`;
+                } else {
+                    analysisHTML += `<p><strong>Critical Gap:</strong> Your review volume is significantly below industry standards, limiting your visibility and credibility.</p>`;
+                }
+                
+                // Strategic recommendations
+                analysisHTML += '<div class="callout-title">Strategic Action Plan</div>';
+                
+                if (currentRating < industryAverage) {
+                    analysisHTML += '<ol>';
+                    analysisHTML += '<li><strong>Quality Improvement:</strong> Address common issues mentioned in negative reviews to prevent recurring problems.</li>';
+                    analysisHTML += '<li><strong>Service Recovery:</strong> Implement a robust response system for negative reviews with timely, personalized replies.</li>';
+                    analysisHTML += '<li><strong>Staff Training:</strong> Focus on consistently delivering experiences that generate 5-star reviews.</li>';
+                    analysisHTML += '</ol>';
+                } else {
+                    analysisHTML += '<ol>';
+                    analysisHTML += '<li><strong>Volume Acceleration:</strong> Implement systematic review request processes to capture more positive experiences.</li>';
+                    analysisHTML += '<li><strong>Excellence Maintenance:</strong> Continue delivering exceptional experiences while monitoring for emerging issues.</li>';
+                    analysisHTML += '<li><strong>Competitive Monitoring:</strong> Track top competitors to identify emerging trends and expectations.</li>';
+                    analysisHTML += '</ol>';
+                }
+                
+                analysisHTML += '</div>';
+                competitiveAnalysis.innerHTML = analysisHTML;
+            }
+            
+            // Update milestones table
+            function updateMilestonesTable() {
+                const { 
+                    currentRating, 
+                    reviewCount,
+                    targetResults
+                } = analysisResults;
+                
+                const reviewRate = parseInt(reviewRateInput.value) || 5;
+                const negativeReviewRate = parseInt(negativeReviewRateInput.value) || 10;
+                
+                let tableHTML = '';
+                
+                // Rating milestones
+                const ratingMilestones = targetResults.filter(result => !result.alreadyAchieved);
+                for (const milestone of ratingMilestones) {
+                    // Calculate time with negative review rate factored in
+                    const effectiveReviewRate = reviewRate * (1 - negativeReviewRate/100);
+                    const months = Math.ceil(milestone.reviewsNeeded / effectiveReviewRate);
+                    
+                    tableHTML += `
+                        <tr>
+                            <td>Reach ${milestone.targetRating.toFixed(1)} ⭐ rating</td>
+                            <td>${months} months</td>
+                            <td>${milestone.reviewsNeeded}</td>
+                            <td>In progress</td>
+                        </tr>
+                    `;
+                }
+                
+                // Review count milestones
+                const reviewMilestones = [100, 250, 500, 1000];
+                for (const milestone of reviewMilestones) {
+                    if (reviewCount >= milestone) {
+                        tableHTML += `
+                            <tr>
+                                <td>Reach ${milestone} total reviews</td>
+                                <td>-</td>
+                                <td>-</td>
+                                <td>Achieved</td>
+                            </tr>
+                        `;
+                    } else {
+                        const reviewsNeeded = milestone - reviewCount;
+                        const months = Math.ceil(reviewsNeeded / reviewRate);
+                        
+                        tableHTML += `
+                            <tr>
+                                <td>Reach ${milestone} total reviews</td>
+                                <td>${months} months</td>
+                                <td>${reviewsNeeded}</td>
+                                <td>In progress</td>
+                            </tr>
+                        `;
+                    }
+                }
+                
+                milestonesTable.innerHTML = tableHTML;
+            }
+            
+            // Generate the rating progress chart
+            function generateRatingProgressChart() {
+                const ctx = document.getElementById('ratingProgressChart').getContext('2d');
+                
+                // Destroy existing chart if it exists
+                if (ratingProgressChart) {
+                    ratingProgressChart.destroy();
+                }
+                
+                // Prepare data
+                const labels = ['Current'].concat(
+                    analysisResults.targetResults
+                        .filter(result => !result.alreadyAchieved)
+                        .map(result => result.targetRating.toFixed(1) + ' Stars')
+                );
+                
+                const ratings = [analysisResults.currentRating].concat(
+                    analysisResults.targetResults
+                        .filter(result => !result.alreadyAchieved)
+                        .map(result => result.targetRating)
+                );
+                
+                // Create chart
+                ratingProgressChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Rating Progression',
+                            data: ratings,
+                            backgroundColor: 'rgba(66, 133, 244, 0.2)',
+                            borderColor: 'rgba(66, 133, 244, 1)',
+                            borderWidth: 3,
+                            pointBackgroundColor: 'rgba(66, 133, 244, 1)',
+                            pointRadius: 6,
+                            pointHoverRadius: 8,
+                            tension: 0.3,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Rating Improvement Journey',
+                                font: {
+                                    size: 16
+                                }
+                            },
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return `Rating: ${context.raw.toFixed(1)} ⭐`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                min: Math.max(0, Math.floor(analysisResults.currentRating) - 0.5),
+                                max: 5,
+                                title: {
+                                    display: true,
+                                    text: 'Rating (Stars)'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Generate the reviews needed chart
+function generateReviewsNeededChart() {
+    const ctx = document.getElementById('reviewsNeededChart').getContext('2d');
+    
+    // Destroy existing chart if it exists
+    if (reviewsNeededChart) {
+        reviewsNeededChart.destroy();
+    }
+    
+    // Prepare data
+    const targetData = analysisResults.targetResults
+        .filter(result => !result.alreadyAchieved);
+    
+    const labels = targetData.map(result => result.targetRating.toFixed(1) + ' Stars');
+    const reviewsNeeded = targetData.map(result => result.reviewsNeeded);
+    
+    // Create chart
+    reviewsNeededChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '5-Star Reviews Needed',
+                data: reviewsNeeded,
+                backgroundColor: [
+                    'rgba(52, 168, 83, 0.5)',
+                    'rgba(66, 133, 244, 0.5)',
+                    'rgba(251, 188, 5, 0.5)',
+                    'rgba(234, 67, 53, 0.5)'
+                ],
+                borderColor: [
+                    'rgba(52, 168, 83, 1)',
+                    'rgba(66, 133, 244, 1)',
+                    'rgba(251, 188, 5, 1)',
+                    'rgba(234, 67, 53, 1)'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                title: {
+                    display: true,
+                    text: 'Additional 5-Star Reviews Needed',
+                    font: {
+                        size: 16
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.raw} additional 5-star reviews needed`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: 'Number of Reviews'
+                    }
+                }
+            }
+        }
+    });
+}
+                        
+            
+            
+            // Generate the rating distribution chart
+            function generateRatingDistributionChart() {
+                const ctx = document.getElementById('ratingDistributionChart').getContext('2d');
+                
+                // Destroy existing chart if it exists
+                if (ratingDistributionChart) {
+                    ratingDistributionChart.destroy();
+                }
+                
+                // Prepare data
+                const distribution = analysisResults.estimatedRatingDistribution;
+                const reviewCounts = distribution.map(
+                    (percent, index) => Math.round(percent * analysisResults.reviewCount)
+                );
+                
+                // Create chart
+                ratingDistributionChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['1 Star', '2 Stars', '3 Stars', '4 Stars', '5 Stars'],
+                        datasets: [{
+                            label: 'Estimated Number of Reviews',
+                            data: reviewCounts,
+                            backgroundColor: [
+                                'rgba(234, 67, 53, 0.7)',
+                                'rgba(251, 188, 5, 0.7)',
+                                'rgba(52, 168, 83, 0.4)',
+                                'rgba(52, 168, 83, 0.7)',
+                                'rgba(52, 168, 83, 0.9)'
+                            ],
+                            borderColor: [
+                                'rgba(234, 67, 53, 1)',
+                                'rgba(251, 188, 5, 1)',
+                                'rgba(52, 168, 83, 0.6)',
+                                'rgba(52, 168, 83, 0.8)',
+                                'rgba(52, 168, 83, 1)'
+                            ],
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Estimated Rating Distribution',
+                                font: {
+                                    size: 16
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        const percent = (distribution[context.dataIndex] * 100).toFixed(1);
+                                        return `${context.raw} reviews (${percent}%)`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Number of Reviews'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Generate the industry comparison chart
+            function generateIndustryComparisonChart() {
+                const ctx = document.getElementById('industryComparisonChart').getContext('2d');
+                
+                // Destroy existing chart if it exists
+                if (industryComparisonChart) {
+                    industryComparisonChart.destroy();
+                }
+                
+                // Get industry averages for all categories
+                const categories = Object.keys(industryAverages);
+                const averages = categories.map(cat => industryAverages[cat]);
+                
+                // Highlight the current business category
+                const backgroundColors = categories.map(cat => 
+                    cat === analysisResults.businessCategory 
+                        ? 'rgba(66, 133, 244, 0.8)' 
+                        : 'rgba(66, 133, 244, 0.3)'
+                );
+                
+                const borderColors = categories.map(cat => 
+                    cat === analysisResults.businessCategory 
+                        ? 'rgba(66, 133, 244, 1)' 
+                        : 'rgba(66, 133, 244, 0.5)'
+                );
+                
+                // Format category labels to be more readable
+                const categoryLabels = categories.map(cat => 
+                    cat.charAt(0).toUpperCase() + cat.slice(1)
+                );
+                
+                // Create chart
+                industryComparisonChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: categoryLabels,
+                        datasets: [
+                            {
+                                label: 'Industry Average Rating',
+                                data: averages,
+                                backgroundColor: backgroundColors,
+                                borderColor: borderColors,
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Your Business',
+                                data: categories.map(cat => 
+                                    cat === analysisResults.businessCategory 
+                                        ? analysisResults.currentRating 
+                                        : null
+                                ),
+                                backgroundColor: 'rgba(234, 67, 53, 0.7)',
+                                borderColor: 'rgba(234, 67, 53, 1)',
+                                borderWidth: 1,
+                                type: 'bar'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Rating Comparison by Industry Category',
+                                font: {
+                                    size: 16
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                min: 3.5,
+                                max: 5,
+                                title: {
+                                    display: true,
+                                    text: 'Average Rating'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Generate competitive positioning chart
+            function generateCompetitivePositioningChart() {
+                const ctx = document.getElementById('competitivePositioningChart').getContext('2d');
+                
+                // Destroy existing chart if it exists
+                if (competitivePositioningChart) {
+                    competitivePositioningChart.destroy();
+                }
+                
+                // Get industry benchmarks
+                const industryAvg = analysisResults.industryAverage;
+                const lowestRating = industryAvg - 0.7;
+                const highestRating = Math.min(5, industryAvg + 0.5);
+                
+                // Create chart with a horizontal bar visualization
+                competitivePositioningChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Competitive Positioning'],
+                        datasets: [
+                            {
+                                label: 'Rating Range (Low to High)',
+                                data: [highestRating - lowestRating],
+                                backgroundColor: 'rgba(66, 133, 244, 0.2)',
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.8,
+                                base: lowestRating
+                            },
+                            {
+                                label: 'Your Business',
+                                data: [0], // Will be positioned using annotations
+                                backgroundColor: 'rgba(0, 0, 0, 0)',
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.8,
+                                base: lowestRating
+                            },
+                            {
+                                label: 'Industry Average',
+                                data: [0], // Will be positioned using annotations
+                                backgroundColor: 'rgba(0, 0, 0, 0)',
+                                barPercentage: 0.8,
+                                categoryPercentage: 0.8,
+                                base: lowestRating
+                            }
+                        ]
+                        
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        indexAxis: 'y',
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Competitive Positioning in Industry',
+                                font: {
+                                    size: 16
+                                }
+                            },
+                            tooltip: {
+                                enabled: false
+                            },
+                            annotation: {
+                                annotations: {
+                                    lowMarker: {
+                                        type: 'line',
+                                        yMin: 0,
+                                        yMax: 0,
+                                        xMin: lowestRating,
+                                        xMax: lowestRating,
+                                        borderColor: 'rgba(234, 67, 53, 0.7)',
+                                        borderWidth: 2,
+                                        label: {
+                                            content: 'Low',
+                                            enabled: true,
+                                            position: 'start'
+                                        }
+                                    },
+                                    avgMarker: {
+                                        type: 'line',
+                                        yMin: 0,
+                                        yMax: 0,
+                                        xMin: industryAvg,
+                                        xMax: industryAvg,
+                                        borderColor: 'rgba(251, 188, 5, 0.7)',
+                                        borderWidth: 2,
+                                        label: {
+                                            content: 'Average',
+                                            enabled: true,
+                                            position: 'start'
+                                        }
+                                    },
+                                    highMarker: {
+                                        type: 'line',
+                                        yMin: 0,
+                                        yMax: 0,
+                                        xMin: highestRating,
+                                        xMax: highestRating,
+                                        borderColor: 'rgba(52, 168, 83, 0.7)',
+                                        borderWidth: 2,
+                                        label: {
+                                            content: 'Top',
+                                            enabled: true,
+                                            position: 'start'
+                                        }
+                                    },
+                                    yourMarker: {
+                                        type: 'line',
+                                        yMin: 0,
+                                        yMax: 0,
+                                        xMin: analysisResults.currentRating,
+                                        xMax: analysisResults.currentRating,
+                                        borderColor: 'rgba(66, 133, 244, 1)',
+                                        borderWidth: 3,
+                                        label: {
+                                            content: 'Your Rating',
+                                            enabled: true,
+                                            position: 'center'
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                min: lowestRating - 0.1,
+                                max: highestRating + 0.1,
+                                title: {
+                                    display: true,
+                                    text: 'Rating (Stars)'
+                                }
+                            },
+                            y: {
+                                display: false
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Generate distribution comparison chart
+            function generateDistributionComparisonChart() {
+                const ctx = document.getElementById('distributionComparisonChart').getContext('2d');
+                
+                // Destroy existing chart if it exists
+                if (distributionComparisonChart) {
+                    distributionComparisonChart.destroy();
+                }
+                
+                // Get your distribution and industry average distribution
+                const yourDistribution = analysisResults.estimatedRatingDistribution;
+                
+                // Estimate industry distribution
+                let industryDistribution;
+                const industryAvg = analysisResults.industryAverage;
+                
+                // Create estimated industry distribution based on typical patterns
+                if (industryAvg >= 4.5) {
+                    industryDistribution = [0.01, 0.02, 0.07, 0.30, 0.60]; // 5,4,3,2,1 stars
+                } else if (industryAvg >= 4.0) {
+                    industryDistribution = [0.02, 0.05, 0.13, 0.40, 0.40];
+                } else if (industryAvg >= 3.5) {
+                    industryDistribution = [0.05, 0.10, 0.25, 0.35, 0.25];
+                } else {
+                    industryDistribution = [0.08, 0.15, 0.30, 0.30, 0.17];
+                }
+                
+                // Convert to percentages
+                const yourPercentages = yourDistribution.map(val => (val * 100).toFixed(1));
+                const industryPercentages = industryDistribution.map(val => (val * 100).toFixed(1));
+                
+                // Create chart
+                distributionComparisonChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['1 Star', '2 Stars', '3 Stars', '4 Stars', '5 Stars'],
+                        datasets: [
+                            {
+                                label: 'Your Business',
+                                data: yourPercentages,
+                                backgroundColor: 'rgba(66, 133, 244, 0.7)',
+                                borderColor: 'rgba(66, 133, 244, 1)',
+                                borderWidth: 1
+                            },
+                            {
+                                label: 'Industry Average',
+                                data: industryPercentages,
+                                backgroundColor: 'rgba(251, 188, 5, 0.7)',
+                                borderColor: 'rgba(251, 188, 5, 1)',
+                                borderWidth: 1
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: 'Rating Distribution Comparison',
+                                font: {
+                                    size: 16
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        return `${context.dataset.label}: ${context.raw}%`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                title: {
+                                    display: true,
+                                    text: 'Percentage of Reviews'
+                                },
+                                ticks: {
+                                    callback: function(value) {
+                                        return value + '%';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Update timeline projection chart based on expected review rate
+            function updateTimelineProjection(reviewsPerMonth, projectionPeriod = 12, negativeReviewRate = 10, targetRating = 4.0) {
+                const ctx = document.getElementById('timelineProjectionChart').getContext('2d');
+                
+                // Destroy existing chart if it exists
+                if (timelineProjectionChart) {
+                    timelineProjectionChart.destroy();
+                }
+                
+                // Current values
+                const currentRating = analysisResults.currentRating;
+                const currentReviews = analysisResults.reviewCount;
+                
+                // Find furthest target that's not already achieved
+                const targetResults = analysisResults.targetResults.filter(result => !result.alreadyAchieved);
+                const maxTarget = targetResults.length > 0 
+                    ? Math.max(...targetResults.map(result => result.targetRating))
+                    : currentRating;
+                
+                // Project for specified period
+                const months = [];
+                const projectedRatings = [];
+                const milestones = [];
+                
+                let cumulativePositiveReviews = 0;
+                let cumulativeNegativeReviews = 0;
+                let totalReviews = currentReviews;
+                let rating = currentRating;
+                
+                // Calculate the current total rating points
+                let currentTotalPoints = currentRating * currentReviews;
+                
+                for (let i = 0; i <= projectionPeriod; i++) {
+                    // For month 0, use current values
+                    if (i === 0) {
+                        months.push('Current');
+                        projectedRatings.push(rating);
+                        continue;
+                    }
+                    
+                    // Calculate positive and negative reviews for this month
+                    const monthlyNegativeReviews = Math.round(reviewsPerMonth * (negativeReviewRate / 100));
+                    const monthlyPositiveReviews = reviewsPerMonth - monthlyNegativeReviews;
+                    
+                    // Add new reviews for this month
+                    cumulativePositiveReviews += monthlyPositiveReviews;
+                    cumulativeNegativeReviews += monthlyNegativeReviews;
+                    totalReviews += reviewsPerMonth;
+                    
+                    // Calculate new rating
+                    // (Current total points + positive reviews * 5 + negative reviews * 1) / total reviews
+                    const newTotalPoints = currentTotalPoints + (cumulativePositiveReviews * 5) + (cumulativeNegativeReviews * 1);
+                    rating = newTotalPoints / totalReviews;
+                    
+                    // Add projection point
+                    months.push(`Month ${i}`);
+                    projectedRatings.push(rating);
+                    
+                    // Check if we've hit any target milestones
+                    for (const target of targetResults) {
+                        if (rating >= target.targetRating && !milestones.includes(target.targetRating)) {
+                            milestones.push(target.targetRating);
+                        }
+                    }
+                }
+                
+                // Create milestone markers for the chart
+                const milestonePoints = [];
+                for (let i = 0; i < projectedRatings.length; i++) {
+                    for (const milestone of milestones) {
+                        if (i > 0 && 
+                            projectedRatings[i-1] < milestone && 
+                            projectedRatings[i] >= milestone) {
+                            milestonePoints.push({
+                                x: months[i],
+                                y: milestone,
+                                milestone: milestone.toFixed(1)
+                            });
+                            break;
+                        }
+                    }
+                }
+                
+                // Add target rating line
+                const targetLine = [];
+                for (let i = 0; i < months.length; i++) {
+                    targetLine.push(targetRating);
+                }
+                
+                // Create chart
+                timelineProjectionChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: months,
+                        datasets: [
+                            {
+                                label: 'Projected Rating',
+                                data: projectedRatings,
+                                backgroundColor: 'rgba(66, 133, 244, 0.2)',
+                                borderColor: 'rgba(66, 133, 244, 1)',
+                                borderWidth: 3,
+                                tension: 0.3,
+                                fill: true
+                            },
+                            {
+                                label: 'Target Rating',
+                                data: targetLine,
+                                borderColor: 'rgba(234, 67, 53, 0.7)',
+                                borderWidth: 2,
+                                borderDash: [5, 5],
+                                fill: false,
+                                pointRadius: 0
+                            },
+                            {
+                                label: 'Rating Milestones',
+                                data: milestonePoints,
+                                backgroundColor: 'rgba(52, 168, 83, 1)',
+                                borderColor: 'rgba(52, 168, 83, 1)',
+                                pointRadius: 8,
+                                pointHoverRadius: 10,
+                                showLine: false,
+                                type: 'scatter'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            title: {
+                                display: true,
+                                text: `Rating Projection (${reviewsPerMonth} new reviews per month, ${negativeReviewRate}% negative)`,
+                                font: {
+                                    size: 16
+                                }
+                            },
+                            tooltip: {
+                                callbacks: {
+                                    label: function(context) {
+                                        if (context.dataset.label === 'Rating Milestones') {
+                                            return `Milestone: ${context.raw.milestone} stars reached`;
+                                        }
+                                        if (context.dataset.label === 'Target Rating') {
+                                            return `Target: ${targetRating} stars`;
+                                        }
+                                        return `Projected Rating: ${context.raw.toFixed(2)} stars`;
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            y: {
+                                min: Math.max(currentRating - 0.2, 1),
+                                max: Math.min(maxTarget + 0.2, 5),
+                                title: {
+                                    display: true,
+                                    text: 'Rating (Stars)'
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Update PDF preview based on selected template
+            function updatePdfPreview() {
+                // Get business data
+                const { 
+                    businessName, 
+                    currentRating, 
+                    reviewCount, 
+                    targetResults, 
+                    industryAverage,
+                    businessCategory,
+                    businessLocation,
+                    businessWebsite,
+                    estimatedPositiveReviews,
+                    ratingVolatility,
+                    ratingGrowth,
+                    historicalRating
+                } = analysisResults;
+                
+                // Get PDF options
+                const reportTitle = reportTitleInput.value || `Google Maps Rating Analysis for ${businessName}`;
+                const reportDate = reportDateInput.value;
+                const includeExecutiveSummary = document.getElementById('includeExecutiveSummary').checked;
+                const includeDistributionAnalysis = document.getElementById('includeDistributionAnalysis').checked;
+                const includeProjections = document.getElementById('includeProjections').checked;
+                const includeIndustryComparison = document.getElementById('includeIndustryComparison').checked;
+                const includeRecommendations = document.getElementById('includeRecommendations').checked;
+                const includeContactInfo = document.getElementById('includeContactInfo').checked;
+                
+                let previewHTML = '';
+                
+                // Build appropriate template
+                switch (selectedTemplate) {
+                    case 'basic':
+                        previewHTML = generateBasicReportHTML();
+                        break;
+                    case 'professional':
+                        previewHTML = generateProfessionalReportHTML();
+                        break;
+                    case 'data':
+                        previewHTML = generateDataReportHTML();
+                        break;
+                    case 'advanced':
+                        previewHTML = generateAdvancedReportHTML();
+                        break;
+                    default:
+                        previewHTML = generateBasicReportHTML();
+                }
+                
+                // Update preview container
+                pdfPreview.innerHTML = previewHTML;
+            }
+            
+            // Generate basic report HTML
+            function generateBasicReportHTML() {
+                const { 
+                    businessName, 
+                    currentRating, 
+                    reviewCount, 
+                    targetResults, 
+                    industryAverage,
+                    businessCategory,
+                    businessLocation
+                } = analysisResults;
+                
+                // Format industry category
+                const formattedCategory = businessCategory.charAt(0).toUpperCase() + businessCategory.slice(1);
+                
+                // Get PDF options
+                const reportTitle = reportTitleInput.value || `Google Maps Rating Analysis for ${businessName}`;
+                const includeExecutiveSummary = document.getElementById('includeExecutiveSummary').checked;
+                const includeProjections = document.getElementById('includeProjections').checked;
+                const includeIndustryComparison = document.getElementById('includeIndustryComparison').checked;
+                
+                // Format date
+                const reportDate = reportDateInput.value;
+                const formattedDate = reportDate ? new Date(reportDate).toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                }) : new Date().toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+                
+                return `
+                    <div class="report-header-basic">
+                        <h1 class="text-center">${reportTitle}</h1>
+                        <p class="text-center">Generated on ${formattedDate}</p>
+                    </div>
+                    
+                    <h2>Business Overview</h2>
+                    <p><strong>Business Name:</strong> ${businessName}</p>
+                    <p><strong>Current Rating:</strong> ${currentRating.toFixed(1)} ⭐</p>
+                    <p><strong>Total Reviews:</strong> ${reviewCount.toLocaleString()}</p>
+                    <p><strong>Business Category:</strong> ${formattedCategory}</p>
+                    ${businessLocation ? `<p><strong>Location:</strong> ${businessLocation}</p>` : ''}
+                    <p><strong>Industry Average Rating:</strong> ${industryAverage.toFixed(1)} ⭐</p>
+                    
+                    ${includeExecutiveSummary ? `
+                    <div class="callout">
+                        <div class="callout-title">Current Status</div>
+                        <p>Your business is currently ${currentRating > industryAverage ? 'above' : 'below'} the industry average of ${industryAverage.toFixed(1)} stars for ${formattedCategory.toLowerCase()} businesses.</p>
+                    </div>
+                    ` : ''}
+                    
+                    <h2 class="mt-4">Rating Improvement Requirements</h2>
+                    <p>Based on your current rating of ${currentRating.toFixed(1)} stars across ${reviewCount} reviews, here's what you'll need to improve your rating:</p>
+                    
+                    <table class="result-table mb-20">
+                        <thead>
+                            <tr>
+                                <th>Target Rating</th>
+                                <th>Additional 5-Star Reviews Needed</th>
+                                <th>Total Reviews After</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${targetResults.map(result => `
+                                <tr>
+                                    <td>${result.targetRating.toFixed(1)} ⭐</td>
+                                    <td>${result.alreadyAchieved 
+                                        ? '<span style="color: green;">Already achieved</span>' 
+                                        : result.reviewsNeeded.toLocaleString()}</td>
+                                    <td>${result.totalReviews.toLocaleString()}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                    
+                    ${includeProjections && !includeIndustryComparison ? `
+                    <h2>Rating Timeline</h2>
+                    <p>With consistent effort to gather new 5-star reviews, you can expect to see your rating improve over time. Assuming you collect 5 new positive reviews per month:</p>
+                    <ul>
+                        <li>In <strong>3 months</strong>: Your rating could improve to approximately ${(currentRating + 0.2).toFixed(1)} stars</li>
+                        <li>In <strong>6 months</strong>: Your rating could reach around ${(currentRating + 0.3).toFixed(1)} stars</li>
+                        <li>In <strong>12 months</strong>: Your rating could increase to ${(currentRating + 0.5).toFixed(1)} stars or higher</li>
+                    </ul>
+                    ` : ''}
+                    
+                    ${includeIndustryComparison ? `
+                    <h2>Industry Comparison</h2>
+                    <p>Within the ${formattedCategory.toLowerCase()} category:</p>
+                    <ul>
+                        <li>The average rating is <strong>${industryAverage.toFixed(1)} stars</strong></li>
+                        <li>Top performers typically maintain ratings of <strong>4.5 stars or higher</strong></li>
+                        <li>Your business is currently <strong>${currentRating > industryAverage ? (currentRating - industryAverage).toFixed(1) + ' stars above' : (industryAverage - currentRating).toFixed(1) + ' stars below'}</strong> the industry average</li>
+                    </ul>
+                    ` : ''}
+                    
+                    <h2>Recommendations</h2>
+                    <ol>
+                        <li>Focus on consistently delivering excellent service to naturally encourage more 5-star reviews.</li>
+                        <li>Consider implementing a review request system for satisfied customers.</li>
+                        <li>Respond promptly to all reviews, both positive and negative.</li>
+                        <li>Address issues mentioned in negative reviews to prevent similar feedback in the future.</li>
+                    </ol>
+                    
+                    <div class="disclaimer">
+                        <p>This report is based on mathematical projections and does not guarantee actual results. Ratings depend on genuine customer experiences.</p>
+                    </div>
+                `;
+            }
+            
+            // Generate professional report HTML
+            function generateProfessionalReportHTML() {
+                const { 
+                    businessName, 
+                    currentRating, 
+                    reviewCount, 
+                    targetResults, 
+                    industryAverage,
+                    businessCategory,
+                    businessLocation,
+                    businessWebsite,
+                    estimatedPositiveReviews,
+                    estimatedRatingDistribution
+                } = analysisResults;
+                
+                // Get PDF options
+                const reportTitle = reportTitleInput.value || `Google Maps Rating Analysis for ${businessName}`;
+                const includeExecutiveSummary = document.getElementById('includeExecutiveSummary').checked;
+                const includeDistributionAnalysis = document.getElementById('includeDistributionAnalysis').checked;
+                const includeProjections = document.getElementById('includeProjections').checked;
+                const includeIndustryComparison = document.getElementById('includeIndustryComparison').checked;
+                const includeRecommendations = document.getElementById('includeRecommendations').checked;
+                
+                // Format industry category
+                const formattedCategory = businessCategory.charAt(0).toUpperCase() + businessCategory.slice(1);
+                
+                // Format date
+                const reportDate = reportDateInput.value;
+                const formattedDate = reportDate ? new Date(reportDate).toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                }) : new Date().toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+                
+                // Calculate statistics
+                const percentPositive = (estimatedPositiveReviews / reviewCount * 100).toFixed(1);
+                const ratingGap = (industryAverage - currentRating).toFixed(1);
+                
+                // Status indicators
+                let ratingStatus = 'Average';
+                let ratingColor = '#FBBC05';
+                
+                if (currentRating >= 4.5) {
+                    ratingStatus = 'Excellent';
+                    ratingColor = '#34A853';
+                } else if (currentRating >= 4.0) {
+                    ratingStatus = 'Very Good';
+                    ratingColor = '#34A853';
+                } else if (currentRating >= 3.5) {
+                    ratingStatus = 'Good';
+                    ratingColor = '#FBBC05';
+                } else if (currentRating < 3.0) {
+                    ratingStatus = 'Needs Improvement';
+                    ratingColor = '#EA4335';
+                }
+                
+                // Compare to industry
+                const industryComparison = currentRating >= industryAverage
+                    ? `Your rating is above the industry average of ${industryAverage.toFixed(1)} stars.`
+                    : `Your rating is ${ratingGap} stars below the industry average of ${industryAverage.toFixed(1)}.`;
+                
+                return `
+                    <div class="report-header-professional">
+                        <h1 class="text-center">${reportTitle}</h1>
+                        <p class="text-center">Strategic Improvement Plan for ${businessName}</p>
+                    </div>
+                    
+                    ${includeExecutiveSummary ? `
+                    <div class="report-section">
+                        <h2>Executive Summary</h2>
+                        <p>This report analyzes the current Google Maps rating for ${businessName} and provides a strategic roadmap for rating improvement. Based on the analysis of your ${reviewCount} reviews and current ${currentRating.toFixed(1)}-star rating, we've identified specific targets and the actions needed to achieve them.</p>
+                        
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-label">Current Rating</div>
+                                <div class="stat-value" style="color: ${ratingColor};">${currentRating.toFixed(1)}</div>
+                                <div class="stat-label">${ratingStatus}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Total Reviews</div>
+                                <div class="stat-value">${reviewCount.toLocaleString()}</div>
+                                <div class="stat-label">customer reviews</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Positive Reviews</div>
+                                <div class="stat-value">${percentPositive}%</div>
+                                <div class="stat-label">4-5 star ratings</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Industry Position</div>
+                                <div class="stat-value">${currentRating >= industryAverage ? '↑' : '↓'}</div>
+                                <div class="stat-label">${currentRating >= industryAverage ? 'Above Average' : 'Below Average'}</div>
+                            </div>
+                        </div>
+                        
+                        <div class="callout">
+                            <div class="callout-title">Key Insight</div>
+                            <p>${industryComparison} For ${formattedCategory.toLowerCase()} businesses, maintaining a rating above ${industryAverage.toFixed(1)} is crucial for competitive positioning.</p>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    <div class="report-section">
+                        <h2>Rating Improvement Strategy</h2>
+                        <p>To improve your Google Maps rating, you need to accumulate additional 5-star reviews. Below is a breakdown of the exact number of positive reviews required to reach each rating milestone:</p>
+                        
+                        <table class="result-table">
+                            <thead>
+                                <tr>
+                                    <th>Target Rating</th>
+                                    <th>Additional 5-Star Reviews Needed</th>
+                                    <th>Total Reviews After</th>
+                                    <th>Business Impact</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${targetResults.map(result => {
+                                    let impact = '';
+                                    if (result.targetRating >= 4.5) {
+                                        impact = 'Excellent - Top tier status';
+                                    } else if (result.targetRating >= 4.0) {
+                                        impact = 'Very Good - Above most competitors';
+                                    } else if (result.targetRating >= 3.5) {
+                                        impact = 'Good - Meeting customer expectations';
+                                    } else {
+                                        impact = 'Satisfactory - Basic competitive level';
+                                    }
+                                    
+                                    return `
+                                        <tr>
+                                            <td>${result.targetRating.toFixed(1)} ⭐</td>
+                                            <td>${result.alreadyAchieved 
+                                                ? '<span style="color: green;">Already achieved</span>' 
+                                                : result.reviewsNeeded.toLocaleString()}</td>
+                                            <td>${result.totalReviews.toLocaleString()}</td>
+                                            <td>${impact}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    ${includeDistributionAnalysis ? `
+                    <div class="report-section">
+                        <h2>Rating Distribution Analysis</h2>
+                        <p>Based on your current average rating, we've estimated the following distribution of ratings:</p>
+                        
+                        <table class="result-table">
+                            <thead>
+                                <tr>
+                                    <th>Rating</th>
+                                    <th>Estimated Count</th>
+                                    <th>Percentage</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${estimatedRatingDistribution.map((percent, index) => {
+                                    const stars = index + 1;
+                                    const count = Math.round(percent * reviewCount);
+                                    const percentage = (percent * 100).toFixed(1);
+                                    
+                                    return `
+                                        <tr>
+                                            <td>${stars} Star${stars !== 1 ? 's' : ''}</td>
+                                            <td>${count}</td>
+                                            <td>${percentage}%</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                        
+                        <div class="callout">
+                            <div class="callout-title">Distribution Insight</div>
+                            <p>Your estimated ${(estimatedRatingDistribution[3] + estimatedRatingDistribution[4]) * 100}% positive reviews (4-5 stars) is ${
+                                (estimatedRatingDistribution[3] + estimatedRatingDistribution[4]) * 100 > 75 ? 'excellent and indicates strong customer satisfaction' :
+                                (estimatedRatingDistribution[3] + estimatedRatingDistribution[4]) * 100 > 60 ? 'good, showing solid customer satisfaction' :
+                                'lower than ideal, suggesting room for service improvements'
+                            }.</p>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    ${includeRecommendations ? `
+                    <div class="report-section">
+                        <h2>Strategic Recommendations</h2>
+                        
+                        <h3>Short-term Actions (1-3 months)</h3>
+                        <ol>
+                            <li><strong>Implement a review request system</strong> - Develop a systematic approach to request reviews from satisfied customers through email or text messages.</li>
+                            <li><strong>Staff training</strong> - Train staff to identify opportunities to request reviews from happy customers.</li>
+                            <li><strong>Respond to all reviews</strong> - Ensure timely, personalized responses to all Google reviews, both positive and negative.</li>
+                        </ol>
+                        
+                        <h3>Medium-term Actions (3-6 months)</h3>
+                        <ol>
+                            <li><strong>Service improvement</strong> - Address common issues mentioned in negative reviews.</li>
+                            <li><strong>Create memorable experiences</strong> - Implement special touches that exceed customer expectations.</li>
+                            <li><strong>Review monitoring</strong> - Set up alerts for new reviews and track progress against targets.</li>
+                        </ol>
+                        
+                        <h3>Long-term Strategy (6+ months)</h3>
+                        <ol>
+                            <li><strong>Culture of excellence</strong> - Build a company culture focused on consistently delivering 5-star experiences.</li>
+                            <li><strong>Leverage positive reviews</strong> - Showcase your best reviews in marketing materials.</li>
+                            <li><strong>Continuous improvement</strong> - Regularly analyze review content for ongoing service refinement.</li>
+                        </ol>
+                    </div>
+                    ` : ''}
+                    
+                    ${includeIndustryComparison && includeProjections ? `
+                    <div class="report-section">
+                        <h2>Competitive Outlook</h2>
+                        <p>Based on industry benchmarks and your current trajectory:</p>
+                        
+                        <ul>
+                            <li><strong>Industry position:</strong> Your ${currentRating.toFixed(1)}-star rating places you ${
+                                currentRating > industryAverage + 0.3 ? 'well above' :
+                                currentRating > industryAverage ? 'slightly above' :
+                                currentRating > industryAverage - 0.3 ? 'slightly below' :
+                                'significantly below'
+                            } the ${formattedCategory.toLowerCase()} industry average of ${industryAverage.toFixed(1)} stars.</li>
+                            <li><strong>Competitive advantage:</strong> A rating of 4.5+ stars would place you among the top performers in your category.</li>
+                            <li><strong>Timeline projection:</strong> With consistent efforts, you could reach the next rating milestone in approximately ${
+                                targetResults.find(r => !r.alreadyAchieved)?.timeToAchieve || '6-12 months'
+                            }.</li>
+                        </ul>
+                    </div>
+                    ` : ''}
+                    
+                    <div class="disclaimer">
+                        <p>Report generated on ${formattedDate} | This analysis is based on mathematical projections and may not account for all variables that affect online ratings. Results depend on genuine customer experiences and cannot be guaranteed.</p>
+                    </div>
+                `;
+            }
+            
+            // Generate data-focused report HTML
+            function generateDataReportHTML() {
+                const { 
+                    businessName, 
+                    currentRating, 
+                    reviewCount, 
+                    targetResults, 
+                    industryAverage,
+                    businessCategory,
+                    estimatedRatingDistribution
+                } = analysisResults;
+                
+                // Get PDF options
+                const reportTitle = reportTitleInput.value || `Google Maps Rating Analysis for ${businessName}`;
+                const includeExecutiveSummary = document.getElementById('includeExecutiveSummary').checked;
+                const includeDistributionAnalysis = document.getElementById('includeDistributionAnalysis').checked;
+                const includeProjections = document.getElementById('includeProjections').checked;
+                const includeIndustryComparison = document.getElementById('includeIndustryComparison').checked;
+                const includeRecommendations = document.getElementById('includeRecommendations').checked;
+                
+                // Format date
+                const reportDate = reportDateInput.value;
+                const formattedDate = reportDate ? new Date(reportDate).toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                }) : new Date().toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+                
+                // Calculate estimated reviews by stars
+                const starCounts = estimatedRatingDistribution.map((percent, index) => 
+                    Math.round(percent * reviewCount)
+                );
+                
+                // Calculate positive vs negative reviews
+                const positiveReviews = starCounts[3] + starCounts[4]; // 4 & 5 stars
+                const neutralReviews = starCounts[2]; // 3 stars
+                const negativeReviews = starCounts[0] + starCounts[1]; // 1 & 2 stars
+                
+                // Calculate percentages
+                const positivePercent = (positiveReviews / reviewCount * 100).toFixed(1);
+                const neutralPercent = (neutralReviews / reviewCount * 100).toFixed(1);
+                const negativePercent = (negativeReviews / reviewCount * 100).toFixed(1);
+                
+                // Calculate reviews needed for next level
+                const nextLevel = targetResults.find(result => !result.alreadyAchieved);
+                const reviewsNeededNext = nextLevel ? nextLevel.reviewsNeeded : 0;
+                const nextRating = nextLevel ? nextLevel.targetRating.toFixed(1) : currentRating.toFixed(1);
+                
+                return `
+                    <div class="report-header-data">
+                        <h1 class="text-center">${reportTitle}</h1>
+                        <p class="text-center">${businessName} | Generated on ${formattedDate}</p>
+                    </div>
+                    
+                    <div class="report-section">
+                        <h2>Rating Metrics Dashboard</h2>
+                        
+                        <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+                            <div class="stat-card">
+                                <div class="stat-label">Current Average</div>
+                                <div class="stat-value">${currentRating.toFixed(1)}</div>
+                                <div class="stat-label">stars</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Total Reviews</div>
+                                <div class="stat-value">${reviewCount.toLocaleString()}</div>
+                                <div class="stat-label">customer reviews</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Industry Average</div>
+                                <div class="stat-value">${industryAverage.toFixed(1)}</div>
+                                <div class="stat-label">stars difference: ${(currentRating - industryAverage).toFixed(1)}</div>
+                            </div>
+                        </div>
+                        
+                        ${includeDistributionAnalysis ? `
+                        <h3>Review Sentiment Breakdown</h3>
+                        <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+                            <div class="stat-card">
+                                <div class="stat-label">Positive Reviews (4-5 ⭐)</div>
+                                <div class="stat-value" style="color: #34A853;">${positiveReviews}</div>
+                                <div class="stat-label">${positivePercent}% of total</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Neutral Reviews (3 ⭐)</div>
+                                <div class="stat-value" style="color: #FBBC05;">${neutralReviews}</div>
+                                <div class="stat-label">${neutralPercent}% of total</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Negative Reviews (1-2 ⭐)</div>
+                                <div class="stat-value" style="color: #EA4335;">${negativeReviews}</div>
+                                <div class="stat-label">${negativePercent}% of total</div>
+                            </div>
+                        </div>
+                        
+                        <h3>Estimated Rating Distribution</h3>
+                        <table class="result-table">
+                            <thead>
+                                <tr>
+                                    <th>Rating</th>
+                                    <th>Estimated Reviews</th>
+                                    <th>Percentage</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${starCounts.map((count, index) => {
+                                    const starRating = index + 1;
+                                    const percent = (estimatedRatingDistribution[index] * 100).toFixed(1);
+                                    return `
+                                        <tr>
+                                            <td>${starRating} Star${starRating !== 1 ? 's' : ''}</td>
+                                            <td>${count}</td>
+                                            <td>${percent}%</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                        ` : ''}
+                    </div>
+                    
+                    <div class="report-section">
+                        <h2>Rating Improvement Analysis</h2>
+                        
+                        <div class="callout">
+                            <div class="callout-title">Next Rating Milestone</div>
+                            <p>To reach <strong>${nextRating} stars</strong>, you need <strong>${reviewsNeededNext} additional 5-star reviews</strong>.</p>
+                        </div>
+                        
+                        <h3>Complete Rating Improvement Path</h3>
+                        <table class="result-table">
+                            <thead>
+                                <tr>
+                                    <th>Target</th>
+                                    <th>5★ Reviews Needed</th>
+                                    <th>Total Reviews After</th>
+                                    <th>Statistical Difficulty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${targetResults.map(result => {
+                                    // Calculate difficulty level based on how many reviews are needed
+                                    let difficulty = 'Easy';
+                                    let difficultyColor = '#34A853';
+                                    
+                                    if (!result.alreadyAchieved) {
+                                        if (result.reviewsNeeded > reviewCount * 1.5) {
+                                            difficulty = 'Very Difficult';
+                                            difficultyColor = '#EA4335';
+                                        } else if (result.reviewsNeeded > reviewCount * 0.8) {
+                                            difficulty = 'Difficult';
+                                            difficultyColor = '#FBBC05';
+                                        } else if (result.reviewsNeeded > reviewCount * 0.3) {
+                                            difficulty = 'Moderate';
+                                            difficultyColor = '#4285F4';
+                                        }
+                                    }
+                                    
+                                    return `
+                                        <tr>
+                                            <td>${result.targetRating.toFixed(1)} ⭐</td>
+                                            <td>${result.alreadyAchieved 
+                                                ? '<span style="color: green;">Already achieved</span>' 
+                                                : result.reviewsNeeded.toLocaleString()}</td>
+                                            <td>${result.totalReviews.toLocaleString()}</td>
+                                            <td style="color: ${difficultyColor};">${result.alreadyAchieved ? '-' : difficulty}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                        
+                        ${includeProjections ? `
+                        <h3>Statistical Analysis</h3>
+                        <ul>
+                            <li><strong>Current rating impact:</strong> Each new 5-star review increases your overall rating by approximately ${(5 / (reviewCount + 1) - currentRating / (reviewCount + 1)).toFixed(3)} points.</li>
+                            <li><strong>Review sensitivity:</strong> Your rating is ${reviewCount > 100 ? 'stable' : reviewCount > 50 ? 'moderately sensitive' : 'highly sensitive'} to new reviews due to your current volume of ${reviewCount} reviews.</li>
+                            <li><strong>Competitive position:</strong> Your rating is ${currentRating > industryAverage ? `${(currentRating - industryAverage).toFixed(1)} stars above` : `${(industryAverage - currentRating).toFixed(1)} stars below`} the industry average of ${industryAverage.toFixed(1)}.</li>
+                        </ul>
+                        ` : ''}
+                    </div>
+                    
+                    ${includeRecommendations ? `
+                    <div class="report-section">
+                        <h2>Strategic Recommendations Based on Data</h2>
+                        
+                        <h3>Priority Actions</h3>
+                        <ol>
+                            <li><strong>Target for improvement:</strong> Focus on reaching ${nextRating} stars with ${reviewsNeededNext} new 5-star reviews.</li>
+                            <li><strong>Review acquisition rate:</strong> Aim for a minimum of ${Math.ceil(reviewsNeededNext / 6)} new 5-star reviews per month to reach your next milestone within 6 months.</li>
+                            <li><strong>Negative review mitigation:</strong> Each 1-star review requires ${Math.ceil((5 - currentRating) / (currentRating - 1))} new 5-star reviews to counteract - focus on preventing these through service excellence.</li>
+                        </ol>
+                        
+                        <div class="callout">
+                            <div class="callout-title">Data-Driven Insight</div>
+                            <p>Converting just 20% of your neutral (3-star) reviewers into 5-star reviewers would add approximately ${Math.round(neutralReviews * 0.2)} new 5-star reviews, which would move you ${Math.round(neutralReviews * 0.2) >= reviewsNeededNext ? 'past' : 'toward'} your next rating threshold.</p>
+                        </div>
+                    </div>
+                    ` : ''}
+                    
+                    <div class="disclaimer">
+                        <p>This data analysis is based on statistical projections using your current rating metrics. The distribution of ratings is estimated based on typical patterns for businesses with similar overall ratings. Actual results may vary based on customer experiences and review patterns.</p>
+                        <p>Report generated: ${formattedDate}</p>
+                    </div>
+                `;
+            }
+            
+            // Generate advanced report HTML
+            function generateAdvancedReportHTML() {
+                const { 
+                    businessName, 
+                    currentRating, 
+                    reviewCount, 
+                    businessCategory,
+                    businessLocation,
+                    businessWebsite,
+                    targetResults, 
+                    industryAverage,
+                    estimatedPositiveReviews,
+                    estimatedRatingDistribution,
+                    ratingVolatility,
+                    ratingGrowth,
+                    historicalRating
+                } = analysisResults;
+                
+                // Get PDF options
+                const reportTitle = reportTitleInput.value || `Google Maps Rating Analysis for ${businessName}`;
+                const reportDate = reportDateInput.value;
+                const reportRecipient = document.getElementById('reportRecipient').value;
+                const companyLogo = document.getElementById('companyLogo').value;
+                
+                // Format industry category
+                const formattedCategory = businessCategory.charAt(0).toUpperCase() + businessCategory.slice(1);
+                
+                // Format date
+                const formattedDate = reportDate ? new Date(reportDate).toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                }) : new Date().toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+                
+                // Contact information section
+                const includeContactInfo = document.getElementById('includeContactInfo').checked;
+                let contactInfoHTML = '';
+                
+                if (includeContactInfo) {
+                    const contactName = document.getElementById('contactName').value;
+                    const contactEmail = document.getElementById('contactEmail').value;
+                    const contactPhone = document.getElementById('contactPhone').value;
+                    
+                    contactInfoHTML = `
+                        <div class="report-section">
+                            <h2>Contact Information</h2>
+                            <p><strong>Report prepared by:</strong> ${contactName || 'Rating Analytics Team'}</p>
+                            ${contactEmail ? `<p><strong>Email:</strong> ${contactEmail}</p>` : ''}
+                            ${contactPhone ? `<p><strong>Phone:</strong> ${contactPhone}</p>` : ''}
+                        </div>
+                    `;
+                }
+                
+                // Calculate statistics
+                const percentPositive = (estimatedPositiveReviews / reviewCount * 100).toFixed(1);
+                const ratingGap = (industryAverage - currentRating).toFixed(1);
+                
+                // Calculate rating trend
+                let trendHTML = '';
+                if (historicalRating) {
+                    const trendIcon = ratingGrowth > 0 ? '↑' : ratingGrowth < 0 ? '↓' : '→';
+                    const trendClass = ratingGrowth > 0 ? 'green' : ratingGrowth < 0 ? 'red' : 'orange';
+                    
+                    trendHTML = `
+                        <div class="stat-card">
+                            <div class="stat-label">Rating Trend</div>
+                            <div class="stat-value" style="color: ${trendClass === 'green' ? '#34A853' : trendClass === 'red' ? '#EA4335' : '#FBBC05'}">
+                                ${trendIcon} ${Math.abs(ratingGrowth).toFixed(1)}
+                            </div>
+                            <div class="stat-label">${ratingGrowth > 0 ? 'Increase' : ratingGrowth < 0 ? 'Decrease' : 'No change'}</div>
+                        </div>
+                    `;
+                }
+                
+                // Calculate star distribution
+                const starCounts = estimatedRatingDistribution.map((percent, index) => 
+                    Math.round(percent * reviewCount)
+                );
+                
+                return `
+                    <div class="report-header-advanced">
+                        <h1 class="text-center">${reportTitle}</h1>
+                        ${reportRecipient ? `<p class="text-center">Prepared for: ${reportRecipient}</p>` : ''}
+                        <p class="text-center">Generated on ${formattedDate}</p>
+                    </div>
+                    
+                    <div class="report-section">
+                        <h2>Business Overview</h2>
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-label">Business Name</div>
+                                <div class="stat-value" style="font-size: 1.5rem;">${businessName}</div>
+                                <div class="stat-label">${formattedCategory}</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Current Rating</div>
+                                <div class="stat-value">${currentRating.toFixed(1)}</div>
+                                <div class="stat-label">stars</div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-label">Total Reviews</div>
+                                <div class="stat-value">${reviewCount.toLocaleString()}</div>
+                                <div class="stat-label">customer reviews</div>
+                            </div>
+                            ${trendHTML}
+                        </div>
+                        
+                        ${businessLocation || businessWebsite ? `
+                            <div style="margin-top: 20px;">
+                                ${businessLocation ? `<p><strong>Location:</strong> ${businessLocation}</p>` : ''}
+                                ${businessWebsite ? `<p><strong>Website:</strong> ${businessWebsite}</p>` : ''}
+                            </div>
+                        ` : ''}
+                        
+                        <div class="callout">
+                            <div class="callout-title">Executive Summary</div>
+                            <p>${businessName} currently has a ${currentRating.toFixed(1)}-star rating on Google Maps with ${reviewCount.toLocaleString()} customer reviews. 
+                               This is ${currentRating > industryAverage ? 'above' : 'below'} the industry average of ${industryAverage.toFixed(1)} stars for ${formattedCategory.toLowerCase()} businesses.</p>
+                            
+                            <p>To reach a 4.5-star rating, which places the business in the top tier of customer perception, 
+                               ${targetResults.find(t => t.targetRating === 4.5)?.alreadyAchieved ? 
+                                'you have already achieved this milestone.' : 
+                                `you need approximately ${targetResults.find(t => t.targetRating === 4.5)?.reviewsNeeded.toLocaleString()} additional 5-star reviews.`}</p>
+                            
+                            <p>Your rating volatility is ${ratingVolatility < 5 ? 'low' : ratingVolatility < 15 ? 'moderate' : 'high'}, which means each new review 
+                               ${ratingVolatility < 5 ? 'has minimal impact' : ratingVolatility < 15 ? 'has a noticeable impact' : 'significantly impacts'} your overall rating.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="report-section">
+                        <h2>Rating Distribution Analysis</h2>
+                        <p>Based on your current average rating of ${currentRating.toFixed(1)} stars, we've estimated the following distribution of ratings:</p>
+                        
+                        <table class="result-table">
+                            <thead>
+                                <tr>
+                                    <th>Rating</th>
+                                    <th>Estimated Count</th>
+                                    <th>Percentage</th>
+                                    <th>Impact on Average</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${estimatedRatingDistribution.map((percent, index) => {
+                                    const stars = index + 1;
+                                    const count = starCounts[index];
+                                    const percentage = (percent * 100).toFixed(1);
+                                    
+                                    // Calculate impact - how much average would change if this segment increased by 10%
+                                    const impact = (stars - currentRating) * (count * 0.1) / reviewCount;
+                                    const impactDisplay = impact.toFixed(3);
+                                    const impactClass = impact > 0 ? 'green' : impact < 0 ? 'red' : '';
+                                    
+                                    return `
+                                        <tr>
+                                            <td>${stars} Star${stars !== 1 ? 's' : ''}</td>
+                                            <td>${count.toLocaleString()}</td>
+                                            <td>${percentage}%</td>
+                                            <td style="color: ${impact > 0 ? '#34A853' : impact < 0 ? '#EA4335' : ''}">
+                                                ${impact > 0 ? '+' : ''}${impactDisplay}
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                        
+                        <p style="margin-top: 15px;">
+                            <strong>Positive reviews:</strong> ${percentPositive}% (4-5 stars)<br>
+                            <strong>Neutral reviews:</strong> ${(estimatedRatingDistribution[2] * 100).toFixed(1)}% (3 stars)<br>
+                            <strong>Negative reviews:</strong> ${((estimatedRatingDistribution[0] + estimatedRatingDistribution[1]) * 100).toFixed(1)}% (1-2 stars)
+                        </p>
+                    </div>
+                    
+                    <div class="report-section">
+                        <h2>Rating Improvement Roadmap</h2>
+                        <p>Based on your current rating and review volume, here's a detailed roadmap to higher ratings:</p>
+                        
+                        <table class="result-table">
+                            <thead>
+                                <tr>
+                                    <th>Target Rating</th>
+                                    <th>5★ Reviews Needed</th>
+                                    <th>Total Reviews After</th>
+                                    <th>Business Impact</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${targetResults.map(result => {
+                                    let impact = '';
+                                    if (result.targetRating >= 4.5) {
+                                        impact = 'Excellent - Top tier status';
+                                    } else if (result.targetRating >= 4.0) {
+                                        impact = 'Very Good - Above most competitors';
+                                    } else if (result.targetRating >= 3.5) {
+                                        impact = 'Good - Meeting customer expectations';
+                                    } else {
+                                        impact = 'Satisfactory - Basic competitive level';
+                                    }
+                                    
+                                    return `
+                                        <tr>
+                                            <td>${result.targetRating.toFixed(1)} ⭐</td>
+                                            <td>${result.alreadyAchieved 
+                                                ? '<span style="color: green;">Already achieved</span>' 
+                                                : result.reviewsNeeded.toLocaleString()}</td>
+                                            <td>${result.totalReviews.toLocaleString()}</td>
+                                            <td>${impact}</td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                        
+                        <div class="callout" style="margin-top: 20px;">
+                            <div class="callout-title">Next Milestone Strategy</div>
+                            <p>To achieve your next rating milestone, we recommend focusing on:</p>
+                            <ol>
+                                <li><strong>Customer service enhancement:</strong> Identify touchpoints where you can exceed customer expectations.</li>
+                                <li><strong>Review solicitation:</strong> Implement a systematic approach to request reviews from satisfied customers.</li>
+                                <li><strong>Response management:</strong> Respond promptly to all reviews, addressing concerns mentioned in negative feedback.</li>
+                                <li><strong>Staff training:</strong> Ensure all team members understand the importance of 5-star experiences.</li>
+                            </ol>
+                            
+                            <p>With consistent application of these strategies, you can expect to see measurable rating improvements within 3-6 months.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="report-section">
+                        <h2>Competitive Analysis</h2>
+                        <p>Your rating of ${currentRating.toFixed(1)} stars places you ${
+                            currentRating > industryAverage + 0.3 ? 'well above' : 
+                            currentRating > industryAverage ? 'slightly above' : 
+                            currentRating > industryAverage - 0.3 ? 'slightly below' : 'significantly below'
+                        } the industry average of ${industryAverage.toFixed(1)} for ${formattedCategory.toLowerCase()} businesses.</p>
+                        
+                        <div style="margin: 20px 0;">
+                            <strong>Industry positioning:</strong>
+                            <div style="height: 30px; background-color: #f1f3f4; border-radius: 15px; position: relative; margin-top: 10px;">
+                                <!-- Industry range visualization -->
+                                <div style="position: absolute; left: 0; top: 0; height: 100%; width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0 15px;">
+                                    <span>3.0</span>
+                                    <span>3.5</span>
+                                    <span>4.0</span>
+                                    <span>4.5</span>
+                                    <span>5.0</span>
+                                </div>
+                                
+                                <!-- Industry average marker -->
+                                <div style="position: absolute; left: calc(${(industryAverage - 3) / 2 * 100}%); top: 0; height: 100%; width: 2px; background-color: #FBBC05;"></div>
+                                
+                                <!-- Your position marker -->
+                                <div style="position: absolute; left: calc(${(currentRating - 3) / 2 * 100}%); top: 0; height: 30px; width: 30px; background-color: #4285F4; border-radius: 50%; transform: translateX(-15px);"></div>
+                            </div>
+                        </div>
+                        
+                        <h3>Comparative Advantages ${currentRating >= industryAverage ? '& Strengths' : '& Growth Opportunities'}</h3>
+                        
+                        ${currentRating >= industryAverage ? `
+                            <ul>
+                                <li><strong>Competitive Advantage:</strong> Your above-average rating serves as a significant differentiator in search results.</li>
+                                <li><strong>Search Visibility:</strong> Higher ratings typically result in better positioning in Google Maps search results.</li>
+                                <li><strong>Customer Perception:</strong> Your rating places you among the more reputable businesses in your category.</li>
+                            </ul>
+                        ` : `
+                            <ul>
+                                <li><strong>Growth Opportunity:</strong> Improving your rating to meet or exceed the industry average would significantly enhance your competitive position.</li>
+                                <li><strong>Customer Trust Building:</strong> Focused effort on review quality can rapidly close the gap between your rating and industry leaders.</li>
+                                <li><strong>Review Response Strategy:</strong> Developing a comprehensive response strategy for all reviews can improve perception and rating.</li>
+                            </ul>
+                        `}
+                    </div>
+                    
+                    ${contactInfoHTML}
+                    
+                    <div class="disclaimer">
+                        <p>This report was generated by the Google Maps Rating Analytics tool on ${formattedDate}. The analysis is based on mathematical projections and statistical models, not official Google algorithms. Results depend on continued quality service and genuine customer experiences. Actual rating improvements may vary.</p>
+                    </div>
+                `;
+            }
+            
+            // Generate PDF
+            function generatePDF() {
+                const { jsPDF } = jspdf;
+                
+                // Get PDF format options
+                const pdfFormat = document.getElementById('pdfFormat').value;
+                const pdfOrientation = document.getElementById('pdfOrientation').value;
+                const includePageNumbers = document.getElementById('includePageNumbers').checked;
+                const reportTitle = reportTitleInput.value || `Google Maps Rating Analysis for ${analysisResults.businessName}`;
+                
+                // Set page dimensions based on selected format
+                let pageWidth, pageHeight;
+                switch (pdfFormat) {
+                    case 'letter':
+                        pageWidth = 215.9;
+                        pageHeight = 279.4;
+                        break;
+                    case 'legal':
+                        pageWidth = 215.9;
+                        pageHeight = 355.6;
+                        break;
+                    case 'a4':
+                    default:
+                        pageWidth = 210;
+                        pageHeight = 297;
+                        break;
+                }
+                
+                // Adjust dimensions for orientation
+                if (pdfOrientation === 'landscape') {
+                    [pageWidth, pageHeight] = [pageHeight, pageWidth];
+                }
+                
+                // Create a new PDF document
+                const doc = new jsPDF({
+                    orientation: pdfOrientation,
+                    unit: 'mm',
+                    format: pdfFormat
+                });
+                
+                // Get the content from the preview
+                const content = document.getElementById('pdfPreview');
+                
+                // Use html2canvas to capture the content
+                html2canvas(content, {
+                    scale: 2, // Higher scale for better quality
+                    useCORS: true,
+                    logging: false,
+                    backgroundColor: 'white'
+                }).then(canvas => {
+                    // Get dimensions
+                    const imgData = canvas.toDataURL('image/jpeg', 0.95);
+                    const imgWidth = pageWidth - 20; // Allow for margins
+                    const imgHeight = canvas.height * imgWidth / canvas.width;
+                    let heightLeft = imgHeight;
+                    let position = 10; // Top margin
+                    let pageNumber = 1;
+                    
+                    // Add first page
+                    doc.addImage(imgData, 'JPEG', 10, position, imgWidth, imgHeight);
+                    
+                    // Add page number if enabled
+                    if (includePageNumbers) {
+                        doc.setFontSize(10);
+                        doc.text(`Page ${pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+                    }
+                    
+                    heightLeft -= (pageHeight - 20); // Adjust for margins
+                    
+                    // Add additional pages if needed
+                    while (heightLeft > 0) {
+                        pageNumber++;
+                        position = heightLeft - imgHeight + 10; // Adjust position with margin
+                        doc.addPage();
+                        doc.addImage(imgData, 'JPEG', 10, position, imgWidth, imgHeight);
+                        
+                        // Add page number if enabled
+                        if (includePageNumbers) {
+                            doc.setFontSize(10);
+                            doc.text(`Page ${pageNumber}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+                        }
+                        
+                        heightLeft -= (pageHeight - 20);
+                    }
+                    
+                    // Add metadata to the PDF
+                    doc.setProperties({
+                        title: reportTitle,
+                        subject: `Rating Analysis for ${analysisResults.businessName}`,
+                        author: 'Google Maps Rating Analytics Tool',
+                        keywords: 'google maps, ratings, reviews, analytics',
+                        creator: 'Google Maps Rating Analytics'
+                    });
+                    
+                    // Format filename with date
+                    const today = new Date();
+                    const dateStr = today.toISOString().split('T')[0];
+                    const filename = `${analysisResults.businessName.replace(/[^a-z0-9]/gi, '_').toLowerCase()}_rating_analysis_${dateStr}.pdf`;
+                    
+                    // Save the PDF
+                    doc.save(filename);
+                });
+            }
+        });
+    </script>
+</body>
+</html>
