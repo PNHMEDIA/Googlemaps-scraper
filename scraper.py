@@ -2,7 +2,7 @@
 
 # Standard Library Imports
 import argparse
-import calendar # Not used, but kept from original imports
+import calendar
 import concurrent.futures
 import csv
 import hashlib
@@ -21,7 +21,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote, urlparse, parse_qs
-import statistics # Added for statistics report
+import statistics
 
 # Selenium Imports
 from selenium import webdriver
@@ -29,11 +29,12 @@ from selenium.common.exceptions import (NoSuchElementException,
                                         StaleElementReferenceException,
                                         TimeoutException, WebDriverException)
 from selenium.webdriver.chrome.options import Options
-# from selenium.webdriver.chrome.service import Service # Uncomment if needed
+from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.common.action_chains import ActionChains
 
 # --- Optional Dependency Imports ---
 try:
@@ -97,27 +98,102 @@ except ImportError:
     print("Colorama not available. Colored output disabled.")
 
 # --- Global Constants ---
-VERSION = "3.3.1" # Updated version with JS fix
+VERSION = "4.0.0" # Updated version
 USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36", # Updated Chrome
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15", # Updated Safari
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36 Edg/123.0.0.0", # Updated Edge
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:124.0) Gecko/20100101 Firefox/124.0", # Updated Firefox
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1" # Updated iOS
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36 Edg/124.0.0.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:126.0) Gecko/20100101 Firefox/126.0",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
 ]
-# Common Google Maps URL patterns (used for validation)
+
+# Updated selectors for 2024 Google Maps
 MAPS_URL_PATTERN = re.compile(r"https://(?:www\.)?google\.[a-z.]+/maps/place/.+/@-?\d+\.\d+,-?\d+\.\d+")
-# Selector for the main scrollable results panel
-RESULTS_PANEL_SELECTOR = "div[role='feed']" # Primary, often works
-# Fallback selectors if the primary doesn't work
-FALLBACK_RESULTS_PANEL_SELECTORS = ["div[aria-label^='Results for']", "div.m6QErb > div[aria-label]", "div.DxyBCb"]
-# Selector for individual result items within the panel
-RESULT_ITEM_SELECTOR = "div[jsaction*='mouseover:pane']" # Often stable
-# Selector for the link within a result item
+
+# Updated selectors - 2024 Google Maps structure
+RESULTS_PANEL_SELECTOR = "div[role='feed'], div[role='list'], div.m6QErb[role='region']"
+RESULT_ITEM_SELECTOR = "a[href*='/maps/place/'], div[jsaction*='mouseover']:has(a[href*='/maps/place/']), div.Nv2PK"
 RESULT_LINK_SELECTOR = "a[href*='/maps/place/']"
-# Selector for the "end of results" message
-END_OF_RESULTS_XPATH = "//*[contains(text(), \"You've reached the end of the list\")] | //*[contains(text(), \"Vous êtes arrivé au bout de la liste\")] | //*[contains(text(), \"Sie haben das Ende der Liste erreicht\")] | //*[contains(text(), \"Sei arrivato alla fine dell'elenco\")] | //*[contains(text(), \"Has llegado al final de la lista\")]" # Add more languages
+END_OF_RESULTS_XPATH = "//*[contains(text(), \"You've reached the end of the list\") or contains(text(), \"End of list\") or contains(text(), \"No results found\") or contains(text(), \"Aucun résultat\") or contains(text(), \"Keine Ergebnisse\") or contains(text(), \"Nessun risultato\") or contains(text(), \"No se han encontrado resultados\")]"
+
+# JS Injection scripts to bypass detection
+STEALTH_JS = """
+// Override the webdriver property
+Object.defineProperty(navigator, 'webdriver', {
+  get: () => false,
+});
+
+// Override the permissions property
+if (navigator.permissions) {
+  const originalQuery = navigator.permissions.query;
+  navigator.permissions.query = (parameters) => (
+    parameters.name === 'notifications' ?
+      Promise.resolve({ state: Notification.permission }) :
+      originalQuery(parameters)
+  );
+}
+
+// Override plugins
+Object.defineProperty(navigator, 'plugins', {
+  get: () => {
+    const plugins = [];
+    for (let i = 0; i < 3; i++) {
+      plugins.push({
+        name: `Plugin ${i + 1}`,
+        description: `Description ${i + 1}`,
+        filename: `plugin_${i + 1}.dll`,
+        length: 3,
+        item: function(index) { return this[index] || null; },
+        namedItem: function(name) { return null; },
+        0: { type: 'application/x-shockwave-flash', suffixes: 'swf', description: 'Shockwave Flash' },
+        1: { type: 'application/pdf', suffixes: 'pdf', description: 'PDF Viewer' },
+        2: { type: 'application/x-test', suffixes: 'test', description: 'Test Plugin' }
+      });
+    }
+    return plugins;
+  }
+});
+
+// Add language and platform
+Object.defineProperty(navigator, 'language', {
+  get: () => 'en-US',
+});
+
+Object.defineProperty(navigator, 'platform', {
+  get: () => 'Win32',
+});
+
+// Add canvas fingerprint noise
+HTMLCanvasElement.prototype.getContext = (function(origFn) {
+  return function(type, attributes) {
+    const context = origFn.call(this, type, attributes);
+    if (type === '2d') {
+      const oldGetImageData = context.getImageData;
+      context.getImageData = function(sx, sy, sw, sh) {
+        const imageData = oldGetImageData.call(this, sx, sy, sw, sh);
+        // Add some noise
+        for (let i = 0; i < imageData.data.length; i += 4) {
+          const noise = Math.floor(Math.random() * 3) - 1;
+          imageData.data[i] = Math.max(0, Math.min(255, imageData.data[i] + noise));
+          imageData.data[i+1] = Math.max(0, Math.min(255, imageData.data[i+1] + noise));
+          imageData.data[i+2] = Math.max(0, Math.min(255, imageData.data[i+2] + noise));
+        }
+        return imageData;
+      };
+    }
+    return context;
+  };
+})(HTMLCanvasElement.prototype.getContext);
+
+// Add Chrome-specific functions to simulate Chrome
+window.chrome = {
+  runtime: {},
+  loadTimes: function() {},
+  csi: function() {},
+  app: {}
+};
+"""
 
 # --- Utility Functions ---
 def ensure_directories_exist():
@@ -252,7 +328,8 @@ def setup_logging(session_id):
 # --- Core Classes ---
 class BrowserPool:
     """Manages a pool of browser instances for parallel processing"""
-    def __init__(self, max_browsers=5, headless=True, proxy_list=None, debug=False, browser_error_threshold=3):
+    def __init__(self, max_browsers=5, headless=True, proxy_list=None, debug=False, browser_error_threshold=3, 
+                 user_data_dir=None, driver_path=None, chrome_binary=None):
         self.max_browsers = max_browsers
         self.headless = headless
         self.proxy_list = proxy_list or []
@@ -264,6 +341,9 @@ class BrowserPool:
         self.browser_health = {} # id -> dict (errors, pages_loaded, creation_time)
         self.next_browser_id = 0
         self.logger = logging.getLogger("GoogleMapsScraper")
+        self.user_data_dir = user_data_dir
+        self.driver_path = driver_path
+        self.chrome_binary = chrome_binary
 
     def get_browser(self, timeout=60): # Increased timeout
         """Get an available browser from the pool, creating one if needed"""
@@ -276,8 +356,6 @@ class BrowserPool:
                 # Check for an available existing browser
                 for browser_id, in_use in self.browser_in_use.items():
                     if not in_use:
-                        # Optional: Check browser health/age before reusing
-                        # if self._is_browser_healthy(browser_id):
                         self.browser_in_use[browser_id] = True
                         self.logger.debug(f"Thread {thread_id} acquired existing browser #{browser_id}")
                         return browser_id
@@ -306,50 +384,97 @@ class BrowserPool:
         raise TimeoutError(f"No browser available in the pool within {timeout} seconds")
 
     def _create_browser(self):
-        """Create a new browser instance"""
+        """Create a new browser instance with improved anti-detection measures"""
         options = Options()
+        
+        # Configure headless mode properly
         if self.headless:
             options.add_argument("--headless=new") # Modern headless mode
+        
+        # Set standard window size
         options.add_argument("--window-size=1920,1080")
+        
+        # Security and performance settings
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
+        
+        # Anti-detection settings
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+
+        # Language setting (en-US is most common)
+        options.add_argument("--lang=en-US")
+        
+        # Additional browser configurations
         options.add_argument("--disable-extensions")
-        options.add_argument("--disable-gpu") # Often needed in headless
         options.add_argument("--disable-infobars")
         options.add_argument("--disable-notifications")
-        options.add_argument("--lang=en-GB") # Set language to English GB
-        options.add_argument("--log-level=3") # Suppress console logs from Chrome/Driver
-        options.add_experimental_option('excludeSwitches', ['enable-logging']) # Further suppress logs
-        # Disable image loading (can speed up scraping significantly)
-        # options.add_experimental_option("prefs", {"profile.managed_default_content_settings.images": 2})
-
-        # Random user agent
-        options.add_argument(f"user-agent={random.choice(USER_AGENTS)}")
-
+        options.add_argument("--disable-popup-blocking")
+        
+        # Randomize user agent
+        random_user_agent = random.choice(USER_AGENTS)
+        options.add_argument(f"user-agent={random_user_agent}")
+        
+        # Add more realistic browser fingerprint
+        # Set standard timezone for consistency
+        options.add_argument("--timezone=America/New_York")  # Common timezone
+        
+        # Add geolocation permissions
+        prefs = {
+            "profile.default_content_setting_values.geolocation": 1,  # 1 = Allow
+            "credentials_enable_service": False,
+            "profile.password_manager_enabled": False,
+            "profile.default_content_settings.popups": 0
+        }
+        options.add_experimental_option("prefs", prefs)
+        
+        # Use custom user data directory if provided
+        if self.user_data_dir:
+            unique_profile = os.path.join(self.user_data_dir, f"profile_{hash_string(str(time.time()))}")
+            options.add_argument(f"--user-data-dir={unique_profile}")
+        
         # Add proxy if available
         if self.proxy_list:
             proxy = random.choice(self.proxy_list)
             options.add_argument(f'--proxy-server={proxy}')
             self.logger.debug(f"Using proxy: {proxy}")
+            
+        # Create service object if driver path is provided
+        service = None
+        if self.driver_path:
+            service = Service(executable_path=self.driver_path)
+        
+        # Set chrome binary path if provided
+        if self.chrome_binary:
+            options.binary_location = self.chrome_binary
 
         # Create the browser
-        # Consider adding Service object if chromedriver is not in PATH
-        # service = Service('/path/to/chromedriver')
-        # browser = webdriver.Chrome(service=service, options=options)
         try:
-            browser = webdriver.Chrome(options=options)
-            browser.set_page_load_timeout(60) # Increased page load timeout
-            browser.set_script_timeout(60) # Increased script timeout
-            self.logger.debug("Browser instance created successfully.")
+            if service:
+                browser = webdriver.Chrome(service=service, options=options)
+            else:
+                browser = webdriver.Chrome(options=options)
+                
+            # Set page load and script timeouts
+            browser.set_page_load_timeout(60)
+            browser.set_script_timeout(60)
+            
+            # Inject stealth JS to avoid detection
+            browser.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+                "source": STEALTH_JS
+            })
+            
+            self.logger.debug("Browser instance created successfully with anti-detection measures")
             return browser
+            
         except WebDriverException as e:
             self.logger.error(f"WebDriverException during browser creation: {e}")
             if "net::ERR_PROXY_CONNECTION_FAILED" in str(e) and self.proxy_list:
                  self.logger.error("Proxy connection failed. Check proxy settings/availability.")
             elif "unable to connect to renderer" in str(e).lower():
                  self.logger.error("Browser renderer connection issue. Try updating Chrome/ChromeDriver or disabling headless.")
-            # Add more specific error checks if needed
-            raise # Re-raise the exception after logging
+            raise
 
     def release_browser(self, browser_id):
         """Mark a browser as available"""
@@ -543,10 +668,10 @@ class ConsentHandler:
             {"url_pattern": "_/consentview", "severity": "medium"},
             {"url_pattern": "consent_flow", "severity": "medium"}
         ]
-        # Common button texts/selectors (add more as needed)
+        # Updated 2024 button texts/selectors
         self.accept_selectors = [
-            # Most common Google consent buttons
-            "//button[.//span[contains(text(), 'Accept all')]]", # Button containing span with text
+            # Common Google consent buttons in different languages
+            "//button[.//span[contains(text(), 'Accept all')]]",
             "//button[.//span[contains(text(), 'Accetta tutto')]]",
             "//button[.//span[contains(text(), 'Tout accepter')]]",
             "//button[.//span[contains(text(), 'Alle akzeptieren')]]",
@@ -564,8 +689,13 @@ class ConsentHandler:
             # Direct button text matches (fallback)
             "//button[normalize-space()='Accept all']",
             "//button[normalize-space()='I agree']",
-            # Specific IDs/Classes (less reliable, but sometimes necessary)
-            "button#L2AGLb", # Old Google consent ID
+            "//button[normalize-space()='Agree']",
+            "//button[normalize-space()='Continue']",
+            # Specific IDs/Classes (updated for 2024)
+            "button#L2AGLb", # Common Google consent ID
+            "button[jsname='j6LnEc']", # Consent button jsname
+            "button[jsname='higCR']", # Another consent button jsname
+            "button.VfPpkd-LgbsSe-OWXEXe-k8QpJ", # Material design button class
             "form[action*='signin'] button", # Button within a sign-in form
             "button[data-testid='accept-button']",
             # Role-based selectors
@@ -583,6 +713,10 @@ class ConsentHandler:
              ".gdpr button",
              "div[aria-label*='cookie'] button[aria-label*='Accept']", # More generic cookie banner
              "div[id*='cookie'] button[id*='accept']",
+             "div[class*='cookie'] button[class*='accept']",
+             "#CybotCookiebotDialogBodyButtonAccept", # CookieBot
+             "#accept-cookies", # Generic ID
+             "button[data-cookiebanner='accept_all']", # GDPR cookie banner
         ]
 
     def handle_consent(self, driver, take_screenshot=False, debug_dir=None):
@@ -600,13 +734,37 @@ class ConsentHandler:
                 if take_screenshot and debug_dir:
                     self._take_consent_screenshot(driver, debug_dir, "consent_page")
 
-                # Try clicking common accept buttons using various selectors
+                # Try multiple strategies to handle consent pages
                 if self._try_click_elements(driver, self.accept_selectors, "consent accept button"):
                     self.logger.info("Consent handled by clicking common accept button.")
                     time.sleep(random.uniform(1.5, 2.5)) # Wait for page redirect/update
                     handled = True
                 else:
-                     self.logger.warning("Could not automatically handle consent/login page via primary selectors.")
+                    # Try executing JavaScript to bypass consent
+                    try:
+                        # Attempt to set cookies directly or click buttons via JS
+                        driver.execute_script("""
+                            // Try to set consent cookies directly
+                            document.cookie = "CONSENT=YES+; expires=Thu, 01 Jan 2030 00:00:00 UTC; path=/;";
+                            
+                            // Try to find and click any accept buttons
+                            var buttons = document.querySelectorAll('button, input[type="button"], a.button');
+                            for (var i = 0; i < buttons.length; i++) {
+                                var button = buttons[i];
+                                var text = button.textContent.toLowerCase();
+                                if (text.includes('accept') || text.includes('agree') || 
+                                    text.includes('consent') || text.includes('continue')) {
+                                    button.click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        """)
+                        self.logger.info("Attempted JavaScript consent bypass")
+                        time.sleep(1.5)
+                        handled = True
+                    except Exception as js_err:
+                        self.logger.warning(f"JavaScript consent bypass failed: {js_err}")
 
             # Always check for cookie banners, even if not on a full consent page
             if not handled: # Only check if consent wasn't already handled
@@ -642,23 +800,38 @@ class ConsentHandler:
                     # Check if element is visible and clickable
                     if element.is_displayed() and element.is_enabled():
                         try:
-                            element.click()
-                            self.logger.info(f"Clicked {description} using selector: {selector}")
-                            return True # Click successful, return True
+                            # Scroll element into view before clicking
+                            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", element)
+                            time.sleep(0.2)  # Short pause after scrolling
+                            
+                            # Try direct click with ActionChains (more reliable)
+                            actions = ActionChains(driver)
+                            actions.move_to_element(element).click().perform()
+                            self.logger.info(f"Clicked {description} using ActionChains + selector: {selector}")
+                            return True
+                            
                         except StaleElementReferenceException:
                             self.logger.debug(f"Stale element reference for {description} selector: {selector}. Retrying find.")
-                            # Element became stale, loop will retry finding it if still present
                             break # Break inner loop to re-find elements
+                            
                         except Exception as click_err:
-                            self.logger.debug(f"Could not click {description} '{selector}' directly: {click_err}. Trying JS click.")
-                            # Try JavaScript click as fallback
+                            self.logger.debug(f"Could not click {description} '{selector}' with ActionChains: {click_err}. Trying regular click.")
+                            # Try regular click
                             try:
-                                driver.execute_script("arguments[0].click();", element)
-                                self.logger.info(f"Clicked {description} using JavaScript fallback: {selector}")
-                                return True # JS Click successful
-                            except Exception as js_click_err:
-                                self.logger.debug(f"JS click also failed for {description} '{selector}': {js_click_err}")
-                                # Continue to the next element or selector
+                                element.click()
+                                self.logger.info(f"Clicked {description} using regular click: {selector}")
+                                return True
+                            except Exception as regular_click_err:
+                                self.logger.debug(f"Regular click also failed: {regular_click_err}. Trying JS click.")
+                                
+                                # Try JavaScript click as final fallback
+                                try:
+                                    driver.execute_script("arguments[0].click();", element)
+                                    self.logger.info(f"Clicked {description} using JavaScript fallback: {selector}")
+                                    return True # JS Click successful
+                                except Exception as js_click_err:
+                                    self.logger.debug(f"JS click also failed for {description} '{selector}': {js_click_err}")
+                                    # Continue to the next element or selector
             except Exception as find_err:
                 self.logger.debug(f"Error finding {description} with selector {selector}: {find_err}")
         return False # No element clicked successfully
@@ -677,7 +850,8 @@ class ConsentHandler:
 class GoogleMapsGridScraper:
     """Enhanced Google Maps Grid Scraper with multi-threading and advanced features"""
     def __init__(self, headless=True, max_workers=5, debug=False, cache_enabled=True,
-                 proxy_list=None, browser_error_threshold=3, no_images=False):
+                 proxy_list=None, browser_error_threshold=3, no_images=False,
+                 user_data_dir=None, driver_path=None, chrome_binary=None):
         """Initialize the Enhanced Google Maps Grid Scraper"""
         ensure_directories_exist()
         self.session_id = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -693,7 +867,8 @@ class GoogleMapsGridScraper:
 
         self.browser_pool = BrowserPool(
             max_browsers=max_workers, headless=headless, proxy_list=proxy_list,
-            debug=debug, browser_error_threshold=browser_error_threshold
+            debug=debug, browser_error_threshold=browser_error_threshold,
+            user_data_dir=user_data_dir, driver_path=driver_path, chrome_binary=chrome_binary
         )
         self.consent_handler = ConsentHandler(self.logger)
         self.cache = DataCache(enabled=cache_enabled)
@@ -717,14 +892,23 @@ class GoogleMapsGridScraper:
 
         # Default configuration, can be overridden by args or interactive mode
         self.config = {
-            "extract_emails": True, "deep_email_search": False, # Deep search disabled by default (slow)
-            "extract_social": True, "save_screenshots": debug and not no_images,
-            "grid_size_meters": 250, "scroll_attempts": 15, "scroll_pause_time": 1.5, # Slightly increased pause
-            "email_timeout": 20, # Timeout for loading website for email search
+            "extract_emails": True, 
+            "deep_email_search": False, # Deep search disabled by default (slow)
+            "extract_social": True, 
+            "save_screenshots": debug and not no_images,
+            "grid_size_meters": 250, 
+            "scroll_attempts": 20, # Increased for better coverage
+            "scroll_pause_time": 2.0, # Increased for more reliable loading
+            "email_timeout": 25, # Timeout for loading website for email search
             "retry_on_empty": False, # Don't retry empty cells by default
             "expand_grid_areas": True, # Expand bounds slightly
             "max_results": None, # Will be set by scrape/resume
-            "search_zoom_level": 18, # Default zoom for grid cell search
+            "search_zoom_level": 16, # Default zoom for grid cell search (adjusted for better results)
+            "extract_reviews": True, # New: extract snippets of reviews
+            "extract_hours": True, # New: extract opening hours
+            "randomize_delays": True, # New: add random delays to appear more human-like
+            "max_retries_per_url": 2, # New: max retries for failed URL extractions
+            "result_threshold_per_cell": 40, # Max results to extract from a single cell
         }
         self.logger.info("✅ Initialization complete")
 
@@ -764,31 +948,66 @@ class GoogleMapsGridScraper:
 
             # Use standard Google Maps URL
             driver.get("https://www.google.com/maps")
+            
+            # Add random delay to appear more human
             time.sleep(random.uniform(2, 4))
+            
+            # Handle consent page if it appears
             self.consent_handler.handle_consent(driver, self.debug, self.debug_dir)
-
-            # Find search box and search
+            
+            # Try multiple search techniques for more reliable results
+            
+            # Method 1: Direct search box input
             try:
+                # Wait for search box with longer timeout
                 search_box = WebDriverWait(driver, 15).until(
-                    EC.element_to_be_clickable((By.ID, "searchboxinput"))
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "input#searchboxinput, input[name='q'], input[aria-label*='Search']"))
                 )
+                
+                # Clear field and type slowly like a human
                 search_box.clear()
-                search_box.send_keys(location)
+                
+                # Type location with random pauses between characters
+                for char in location:
+                    search_box.send_keys(char)
+                    time.sleep(random.uniform(0.01, 0.1))
+                
+                time.sleep(random.uniform(0.5, 1.0))  # Pause before hitting enter
                 search_box.send_keys(Keys.ENTER)
+                
                 self.logger.info(f"Searched for location: {location}")
+                
                 # Wait for the URL to update with coordinates
                 WebDriverWait(driver, 20).until(
                     EC.url_contains("@")
                 )
                 self.logger.info(f"URL updated: {driver.current_url}")
+                
             except TimeoutException:
-                self.logger.error("Timeout waiting for search box or URL update.")
-                raise Exception("Could not perform location search")
+                self.logger.warning("Timeout waiting for search box. Trying direct URL method.")
+                
+                # Method 2: Try direct URL with encoded query
+                try:
+                    encoded_location = quote(location)
+                    direct_url = f"https://www.google.com/maps/search/{encoded_location}"
+                    driver.get(direct_url)
+                    
+                    # Wait for map to load and URL to contain coordinates
+                    WebDriverWait(driver, 20).until(
+                        EC.url_contains("@")
+                    )
+                    self.logger.info(f"Direct URL method successful: {driver.current_url}")
+                    
+                except Exception as direct_url_err:
+                    self.logger.error(f"Direct URL method failed: {direct_url_err}")
+                    raise Exception("Could not perform location search")
+                    
             except Exception as search_err:
                  self.logger.error(f"Error during location search input: {search_err}")
                  raise
 
-            time.sleep(random.uniform(3, 5)) # Allow map to settle after URL update
+            # Allow map to settle after URL update
+            time.sleep(random.uniform(3, 5))
 
             if self.debug and not self.no_images:
                 screenshot_path = self.debug_dir / f"location_search_{self.session_id}.png"
@@ -801,7 +1020,12 @@ class GoogleMapsGridScraper:
                 try:
                     # Prioritize extracting from URL as it's often more reliable
                     current_url = driver.current_url
+                    
+                    # Try different URL patterns that Google Maps might use
                     coords_match = re.search(r'@(-?\d+\.\d+),(-?\d+\.\d+),(\d+\.?\d*)z', current_url)
+                    if not coords_match:
+                        coords_match = re.search(r'@(-?\d+\.\d+),(-?\d+\.\d+),(\d+\.?\d*)m/data', current_url)
+                    
                     if coords_match:
                         lat = float(coords_match.group(1))
                         lng = float(coords_match.group(2))
@@ -822,33 +1046,104 @@ class GoogleMapsGridScraper:
                         break # Got bounds from URL
 
                     # Fallback: Try JS map bounds API (less reliable now)
+                    # Enhanced JavaScript to detect more map object structures
                     bounds_data = driver.execute_script("""
                         try {
+                            // Method 1: Find map element with standard Google Maps ID
                             let mapInstance;
-                            const mapElement = document.getElementById('map'); // Common ID
+                            const mapElement = document.getElementById('map');
                             if (mapElement && mapElement.__gm && mapElement.__gm.map) {
                                 mapInstance = mapElement.__gm.map;
-                            } else {
-                                const maps = Array.from(document.querySelectorAll('*')).filter(el => el.__gm && el.__gm.map);
+                            } 
+                            // Method 2: Look for element with map data attribute
+                            else if (document.querySelector('[data-map-id]')) {
+                                const mapDataElement = document.querySelector('[data-map-id]');
+                                if (mapDataElement.__gm && mapDataElement.__gm.map) {
+                                    mapInstance = mapDataElement.__gm.map;
+                                }
+                            }
+                            // Method 3: Find any element with __gm property containing map
+                            else {
+                                const maps = Array.from(document.querySelectorAll('*')).filter(el => 
+                                    el.__gm && el.__gm.map && typeof el.__gm.map.getBounds === 'function');
                                 if (maps.length > 0) mapInstance = maps[0].__gm.map;
                             }
-                            if (mapInstance && mapInstance.getBounds) {
+                            
+                            // If found a map instance, extract bounds
+                            if (mapInstance && typeof mapInstance.getBounds === 'function') {
                                 const bounds = mapInstance.getBounds();
                                 const center = mapInstance.getCenter();
                                 const zoom = mapInstance.getZoom();
+                                
                                 if (bounds && center && typeof zoom === 'number') {
                                     return {
-                                        northeast: { lat: bounds.getNorthEast().lat(), lng: bounds.getNorthEast().lng() },
-                                        southwest: { lat: bounds.getSouthWest().lat(), lng: bounds.getSouthWest().lng() },
-                                        center: { lat: center.lat(), lng: center.lng() },
+                                        northeast: { 
+                                            lat: bounds.getNorthEast().lat(), 
+                                            lng: bounds.getNorthEast().lng() 
+                                        },
+                                        southwest: { 
+                                            lat: bounds.getSouthWest().lat(), 
+                                            lng: bounds.getSouthWest().lng() 
+                                        },
+                                        center: { 
+                                            lat: center.lat(), 
+                                            lng: center.lng() 
+                                        },
                                         zoom: zoom,
                                         method: 'map-bounds-api'
                                     };
                                 }
                             }
+                            
+                            // Method 4: Try to find map data in global variables
+                            if (window.APP_INITIALIZATION_STATE) {
+                                try {
+                                    const jsonData = JSON.parse(window.APP_INITIALIZATION_STATE);
+                                    if (jsonData && jsonData[1] && jsonData[1][0] && 
+                                        jsonData[1][0][1] && jsonData[1][0][1][4]) {
+                                        
+                                        const mapData = jsonData[1][0][1][4];
+                                        // Format varies, but often contains center and zoom
+                                        if (Array.isArray(mapData) && mapData.length >= 3) {
+                                            const centerLat = mapData[0];
+                                            const centerLng = mapData[1];
+                                            const zoom = mapData[2];
+                                            
+                                            if (typeof centerLat === 'number' && 
+                                                typeof centerLng === 'number' &&
+                                                typeof zoom === 'number') {
+                                                
+                                                // Estimate bounds based on zoom level
+                                                const latDelta = 180 / Math.pow(2, zoom + 1);
+                                                const lngDelta = 360 / Math.pow(2, zoom + 1) * 
+                                                                Math.cos(centerLat * Math.PI / 180);
+                                                
+                                                return {
+                                                    northeast: { 
+                                                        lat: centerLat + latDelta/2, 
+                                                        lng: centerLng + lngDelta/2 
+                                                    },
+                                                    southwest: { 
+                                                        lat: centerLat - latDelta/2, 
+                                                        lng: centerLng - lngDelta/2 
+                                                    },
+                                                    center: { 
+                                                        lat: centerLat, 
+                                                        lng: centerLng 
+                                                    },
+                                                    zoom: zoom,
+                                                    method: 'app-initialization-state'
+                                                };
+                                            }
+                                        }
+                                    }
+                                } catch (e) { /* Ignore parsing errors */ }
+                            }
+                            
                         } catch (e) { /* Ignore errors during JS execution */ }
                         return null;
                     """)
+                    
                     if bounds_data:
                         self.logger.info(f"Extracted bounds via JS API (Attempt {attempt+1})")
                         break # Got bounds from JS
@@ -1157,7 +1452,7 @@ class GoogleMapsGridScraper:
 
         browser_id = None # Initialize browser_id
         attempts = 0
-        max_attempts = 2 # Try searching a cell twice if it fails initially
+        max_attempts = self.config.get("max_retries_per_url", 2) # Get from config
 
         while attempts < max_attempts:
             attempts += 1
@@ -1170,17 +1465,19 @@ class GoogleMapsGridScraper:
 
                 # Construct search URL using standard Google Maps search
                 # Use a specific zoom level based on config
-                zoom_level = self.config.get("search_zoom_level", 18)
+                zoom_level = self.config.get("search_zoom_level", 16)
                 # URL encode the query
                 encoded_query = quote(query)
                 # Construct the URL
                 url = f"https://www.google.com/maps/search/{encoded_query}/@{center['lat']:.7f},{center['lng']:.7f},{zoom_level}z/data=!3m1!4b1?entry=ttu"
-                # Explanation of data param: !3m1!4b1 seems common for list view, ?entry=ttu might help trigger results list
 
                 self.logger.info(f"Thread {thread_id} - Cell {cell_id} URL (Attempt {attempts}): {url}")
 
                 driver.get(url)
-                time.sleep(random.uniform(2, 4)) # Wait for initial load
+                
+                # Randomized human-like waiting pattern
+                wait_time = random.uniform(2, 4) if self.config.get("randomize_delays", True) else 3
+                time.sleep(wait_time) # Wait for initial load
 
                 # Handle consent/login immediately after loading
                 if self.consent_handler.handle_consent(driver, self.debug, self.debug_dir):
@@ -1206,43 +1503,78 @@ class GoogleMapsGridScraper:
                             self.stats["extraction_errors"] += 1 # Count as an error
                         return [] # Return empty list
 
-                # Wait for results feed/panel to appear
+                # Wait for results feed/panel to appear with improved selectors
                 try:
-                    WebDriverWait(driver, 15).until( # Increased wait
-                        EC.presence_of_element_located((By.CSS_SELECTOR, RESULTS_PANEL_SELECTOR))
-                    )
+                    # Try multiple selector strategies
+                    for selector in [
+                        RESULTS_PANEL_SELECTOR,  # Primary selector
+                        "div[role='feed']",      # Common feed selector
+                        "div.m6QErb",            # Alternative container class
+                        "div[data-result-index]", # Results with indices
+                        "div#search-views",      # Search container
+                    ]:
+                        try:
+                            element = WebDriverWait(driver, 5).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                            )
+                            if element:
+                                self.logger.debug(f"Results panel found with selector: {selector}")
+                                break
+                        except TimeoutException:
+                            continue
+                    
+                    # If we get here without finding a panel, one more attempt with a longer timeout
+                    if not element:
+                        self.logger.debug("Trying longer timeout for results panel...")
+                        element = WebDriverWait(driver, 10).until(
+                            EC.presence_of_element_located((By.CSS_SELECTOR, RESULTS_PANEL_SELECTOR))
+                        )
+                    
                     self.logger.debug(f"Thread {thread_id} - Cell {cell_id} - Results feed loaded.")
                 except TimeoutException:
                     # Check for "No results found" message
-                    no_results_elements = driver.find_elements(By.XPATH, END_OF_RESULTS_XPATH.replace("You've reached the end of the list", "No results found")) # Adapt xpath
-                    if no_results_elements:
-                        self.logger.info(f"Thread {thread_id} - Cell {cell_id} - Explicitly found 'No results found'.")
-                        with self.lock:
-                            grid_cell["processed"] = True
-                            grid_cell["likely_empty"] = True
-                            self.stats["grid_cells_processed"] += 1
-                            self.stats["grid_cells_empty"] += 1
-                        return [] # Success, but no results
-                    else:
-                        self.logger.warning(f"Thread {thread_id} - Cell {cell_id} - Timeout waiting for search results feed, but no 'No results' message found. (URL: {driver.current_url})")
-                        if self.debug and not self.no_images:
-                            screenshot_path = self.debug_dir / f"no_feed_{cell_id}_{self.session_id}.png"
-                            try: driver.save_screenshot(str(screenshot_path))
-                            except Exception as e: self.logger.warning(f"Screenshot failed: {e}")
-
-                        if attempts < max_attempts:
-                            self.browser_pool.report_error(browser_id, "NoFeedError")
-                            self.browser_pool.release_browser(browser_id)
-                            browser_id = None
-                            time.sleep(random.uniform(3, 5))
-                            continue # Go to next attempt
-                        else:
-                            self.logger.error(f"Thread {thread_id} - Cell {cell_id} - Failed to find feed after {max_attempts} attempts. Skipping cell.")
+                    try:
+                        no_results_elements = driver.find_elements(By.XPATH, END_OF_RESULTS_XPATH)
+                        if no_results_elements and any(el.is_displayed() for el in no_results_elements):
+                            self.logger.info(f"Thread {thread_id} - Cell {cell_id} - Explicitly found 'No results found'.")
                             with self.lock:
                                 grid_cell["processed"] = True
+                                grid_cell["likely_empty"] = True
                                 self.stats["grid_cells_processed"] += 1
-                                self.stats["extraction_errors"] += 1
-                            return []
+                                self.stats["grid_cells_empty"] += 1
+                            return [] # Success, but no results
+                    except Exception as no_results_err:
+                        self.logger.debug(f"Error checking for 'no results' message: {no_results_err}")
+                    
+                    # Also check if we see any place links even if the primary container isn't found
+                    try:
+                        place_links = driver.find_elements(By.CSS_SELECTOR, RESULT_LINK_SELECTOR)
+                        if place_links:
+                            self.logger.info(f"Thread {thread_id} - Cell {cell_id} - Found {len(place_links)} place links despite missing main container.")
+                            # Continue processing even without the main container
+                        else:
+                            self.logger.warning(f"Thread {thread_id} - Cell {cell_id} - Timeout waiting for search results feed, and no place links found. (URL: {driver.current_url})")
+                            if self.debug and not self.no_images:
+                                screenshot_path = self.debug_dir / f"no_feed_{cell_id}_{self.session_id}.png"
+                                try: driver.save_screenshot(str(screenshot_path))
+                                except Exception as e: self.logger.warning(f"Screenshot failed: {e}")
+
+                            if attempts < max_attempts:
+                                self.browser_pool.report_error(browser_id, "NoFeedError")
+                                self.browser_pool.release_browser(browser_id)
+                                browser_id = None
+                                time.sleep(random.uniform(3, 5))
+                                continue # Go to next attempt
+                            else:
+                                self.logger.error(f"Thread {thread_id} - Cell {cell_id} - Failed to find feed after {max_attempts} attempts. Skipping cell.")
+                                with self.lock:
+                                    grid_cell["processed"] = True
+                                    self.stats["grid_cells_processed"] += 1
+                                    self.stats["extraction_errors"] += 1
+                                return []
+                    except Exception as links_err:
+                        self.logger.warning(f"Error checking for place links: {links_err}")
+                        # Continue with retry logic for feed missing
 
                 # Take screenshot if debugging (randomly)
                 if self.debug and not self.no_images and random.random() < 0.05: # Screenshot 5% of cells
@@ -1322,42 +1654,114 @@ class GoogleMapsGridScraper:
 
     def extract_visible_links(self, driver):
         """Extract visible business links without scrolling using JS"""
-        # This function is less critical now as scroll_and_collect does initial extraction too,
-        # but can be kept for specific initial checks if needed.
         self.logger.debug("Extracting initially visible links...")
         try:
-            # More robust JS: Find result items first, then links within them
+            # Improved resilient JS extraction with multiple strategies
             links = driver.execute_script(f"""
                 const links = new Set();
-                const resultItems = document.querySelectorAll('{RESULT_ITEM_SELECTOR}'); // Find result containers
-                resultItems.forEach(item => {{
-                    const linkElement = item.querySelector('{RESULT_LINK_SELECTOR}'); // Find link inside container
-                    if (linkElement && linkElement.href && linkElement.href.includes('/maps/place/') && linkElement.href.includes('/@')) {{
-                        links.add(linkElement.href);
+                
+                // Strategy 1: Find result items first, then links within them
+                try {{
+                    const resultSelectors = [
+                        '{RESULT_ITEM_SELECTOR}',
+                        'div[jsaction*="mouseover"]',
+                        'div[data-result-index]',
+                        'div.Nv2PK', 
+                        'div.lI9IFe'
+                    ];
+                    
+                    for (const selector of resultSelectors) {{
+                        const resultItems = document.querySelectorAll(selector);
+                        for (const item of resultItems) {{
+                            // Find link inside the result item
+                            const linkElement = item.querySelector('a[href*="/maps/place/"]');
+                            if (linkElement && linkElement.href && 
+                                linkElement.href.includes('/maps/place/') && 
+                                linkElement.href.includes('@')) {{
+                                links.add(linkElement.href);
+                            }}
+                            // If the item itself is a link
+                            else if (item.tagName === 'A' && item.href && 
+                                    item.href.includes('/maps/place/') && 
+                                    item.href.includes('@')) {{
+                                links.add(item.href);
+                            }}
+                        }}
                     }}
-                }});
-                // Fallback: Search globally if item selector fails
+                }} catch (e) {{ console.error('Error in Strategy 1:', e); }}
+                
+                // Strategy 2: Search globally within results container
                 if (links.size === 0) {{
-                     document.querySelectorAll('{RESULTS_PANEL_SELECTOR} {RESULT_LINK_SELECTOR}').forEach(el => {{
-                         if (el.href && el.href.includes('/maps/place/') && el.href.includes('/@')) {{
-                             links.add(el.href);
-                         }}
-                     }});
-                }}
-                return Array.from(links);
+                    try {{
+                        const containerSelectors = [
+                            '{RESULTS_PANEL_SELECTOR}',
+                            'div[role="feed"]',
+                            'div.m6QErb',
+                            'div#search-views',
+                            'div[role="main"]'
+                        ];
+                        
+                        for (const containerSelector of containerSelectors) {{
+                            const containers = document.querySelectorAll(containerSelector);
+                            for (const container of containers) {{
+                                const linkElements = container.querySelectorAll('a[href*="/maps/place/"]');
+                                for (const link of linkElements) {{
+                                    if (link.href && link.href.includes('/maps/place/') && link.href.includes('@')) {{
+                                        links.add(link.href);
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }}
+
+                    } catch (e) { console.error('Error in Strategy 2:', e); }
+                }
+                
+                // Strategy 3: Fallback to search entire document
+                if (links.size === 0) {
+                    try {
+                        document.querySelectorAll('a[href*="/maps/place/"]').forEach(el => {
+                            if (el.href && el.href.includes('/maps/place/') && el.href.includes('@')) {
+                                links.add(el.href);
+                            }
+                        });
+                    } catch (e) { console.error('Error in Strategy 3:', e); }
+                }
+                
+                // Clean and filter links
+                const filteredLinks = Array.from(links).filter(url => {
+                    // Filter out links that don't have the expected structure
+                    return url.includes('/maps/place/') && url.includes('@') &&
+                           !url.includes('image?') && !url.includes('/image');
+                });
+                
+                return filteredLinks;
             """)
-            self.logger.debug(f"Found {len(links)} initially visible links.")
+            self.logger.debug(f"Found {len(links) if links else 0} initially visible links.")
             return links if links else []
         except Exception as e:
             self.logger.warning(f"Error extracting visible links via JS: {e}")
             # Fallback to Selenium find_elements (slower)
             try:
-                link_elements = driver.find_elements(By.CSS_SELECTOR, f"{RESULTS_PANEL_SELECTOR} {RESULT_LINK_SELECTOR}")
+                # Try different selectors in case the primary one fails
+                selectors = [
+                    f"{RESULTS_PANEL_SELECTOR} {RESULT_LINK_SELECTOR}",
+                    f"{RESULT_LINK_SELECTOR}",
+                    "div[role='feed'] a[href*='/maps/place/']",
+                    "div.m6QErb a[href*='/maps/place/']"
+                ]
+                
                 selenium_links = set()
-                for el in link_elements:
-                    href = el.get_attribute('href')
-                    if href and "/maps/place/" in href and "/@" in href:
-                        selenium_links.add(href)
+                for selector in selectors:
+                    try:
+                        link_elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                        for el in link_elements:
+                            href = el.get_attribute('href')
+                            if href and "/maps/place/" in href and "/@" in href:
+                                selenium_links.add(href)
+                    except Exception as selector_err:
+                        self.logger.debug(f"Error with selector {selector}: {selector_err}")
+                
                 self.logger.debug(f"Found {len(selenium_links)} links via Selenium fallback.")
                 return list(selenium_links)
             except Exception as se:
@@ -1365,44 +1769,82 @@ class GoogleMapsGridScraper:
                  return []
 
 
-    def scroll_and_collect_links(self, driver, max_scrolls=15):
-        """Scroll through results and collect business links"""
+    def scroll_and_collect_links(self, driver, max_scrolls=20):
+        """Scroll through results and collect business links with improved reliability"""
         links_found = set()
         stagnant_scroll_count = 0 # Counts consecutive scrolls with no height change
         stagnant_link_count = 0 # Counts consecutive scrolls with no new links found
         scroll_element = None
         scroll_target_description = "window" # Default target
 
-        # --- Find the scrollable element ---
+        # --- Find the scrollable element with improved selectors and error handling ---
         try:
-            # Try primary selector first
-            scroll_element = WebDriverWait(driver, 5).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, RESULTS_PANEL_SELECTOR))
-            )
-            scroll_target_description = f"'{RESULTS_PANEL_SELECTOR}'"
-            self.logger.debug(f"Found primary scrollable container: {scroll_target_description}")
-        except TimeoutException:
-            self.logger.debug(f"Primary scroll selector '{RESULTS_PANEL_SELECTOR}' not found quickly. Trying fallbacks...")
-            # Try fallback selectors
-            for selector in FALLBACK_RESULTS_PANEL_SELECTORS:
+            # Try multiple selectors to find the scrollable container
+            scroll_selectors = [
+                RESULTS_PANEL_SELECTOR,  # Main selector combining multiple options
+                "div[role='feed']",      # Most common feed container
+                "div.m6QErb[role='region']", # Region container
+                "div.siAUzd-neVct", # New container class
+                "div.DxyBCb"        # Older container class
+            ]
+            
+            for selector in scroll_selectors:
                 try:
                     elements = driver.find_elements(By.CSS_SELECTOR, selector)
-                    # Find the element with the largest scrollHeight, likely the main feed
-                    best_element = None
-                    max_scroll = -1
-                    for el in elements:
-                        try:
-                            sh = driver.execute_script("return arguments[0].scrollHeight", el)
-                            if sh > max_scroll:
-                                max_scroll = sh
-                                best_element = el
-                        except Exception: continue # Ignore errors checking scroll height
-                    if best_element:
-                        scroll_element = best_element
-                        scroll_target_description = f"fallback '{selector}' (h:{max_scroll})"
-                        self.logger.debug(f"Found scrollable container with fallback selector: {scroll_target_description}")
-                        break
-                except Exception: continue # Ignore errors finding elements
+                    if elements:
+                        # Find element with largest scroll height
+                        best_element = None
+                        max_scroll = -1
+                        for el in elements:
+                            try:
+                                sh = driver.execute_script("return arguments[0].scrollHeight", el)
+                                if sh > max_scroll:
+                                    max_scroll = sh
+                                    best_element = el
+                            except Exception:
+                                continue
+                        
+                        if best_element:
+                            scroll_element = best_element
+                            scroll_target_description = f"'{selector}' (h:{max_scroll})"
+                            self.logger.debug(f"Found scrollable container: {scroll_target_description}")
+                            break
+                except Exception as selector_err:
+                    self.logger.debug(f"Error finding scroll container with selector {selector}: {selector_err}")
+            
+            # If no scroll element found but feed seems present, try JavaScript to find it
+            if not scroll_element:
+                try:
+                    js_scroll_element = driver.execute_script("""
+                        // Find most likely scroll container
+                        const containers = [
+                            document.querySelector('div[role="feed"]'),
+                            document.querySelector('div.m6QErb[role="region"]'),
+                            document.querySelector('div.DxyBCb'),
+                            document.querySelector('div.siAUzd-neVct'),
+                            document.querySelector('div[jsaction*="mouseover"]')
+                        ].filter(el => el !== null);
+                        
+                        // Find the container with greatest scrollHeight
+                        let bestContainer = null;
+                        let maxHeight = 0;
+                        for (const container of containers) {
+                            if (container.scrollHeight > maxHeight) {
+                                maxHeight = container.scrollHeight;
+                                bestContainer = container;
+                            }
+                        }
+                        
+                        return bestContainer;
+                    """)
+                    if js_scroll_element:
+                        scroll_element = js_scroll_element
+                        scroll_target_description = "JS-identified container"
+                        self.logger.debug("Found scrollable container via JavaScript fallback")
+                except Exception as js_err:
+                    self.logger.debug(f"JavaScript scroll container detection failed: {js_err}")
+        except Exception as find_err:
+            self.logger.warning(f"Error identifying scroll container: {find_err}")
 
         if not scroll_element:
             self.logger.warning("Could not find specific scrollable feed container, falling back to scrolling window/body.")
@@ -1412,9 +1854,9 @@ class GoogleMapsGridScraper:
         # --- Scrolling Loop ---
         last_scroll_height = 0
         scroll_pause = self.config["scroll_pause_time"]
+        result_threshold = self.config.get("result_threshold_per_cell", 40)
 
-        # Define the JS function to extract links (avoids repeated large strings)
-        # Pass selectors as arguments to the JS function
+        # Define the JS function to extract links
         js_script = """
             const itemSelector = arguments[0];
             const linkSelector = arguments[1];
@@ -1424,44 +1866,106 @@ class GoogleMapsGridScraper:
             // Try finding links within result items first
             try {
                 document.querySelectorAll(itemSelector).forEach(item => {
+                    // Find link within the item
                     const linkElement = item.querySelector(linkSelector);
-                    if (linkElement && linkElement.href && linkElement.href.includes('/maps/place/') && linkElement.href.includes('/@')) {
+                    if (linkElement && linkElement.href && 
+                        linkElement.href.includes('/maps/place/') && 
+                        linkElement.href.includes('@')) {
                         links.add(linkElement.href);
+                    }
+                    // Check if the item itself is a link
+                    else if (item.tagName === 'A' && item.href && 
+                            item.href.includes('/maps/place/') && 
+                            item.href.includes('@')) {
+                        links.add(item.href);
                     }
                 });
             } catch (e) { console.warn('Error querying itemSelector:', e); }
 
-            // Fallback: If no links found via itemSelector, try querying within parent selectors
-            if (links.size === 0) {
+            // Fallback: If few links found via itemSelector, try querying within parent selectors
+            if (links.size < 5) {
                 parentSelectors.forEach(parentSel => {
                     try {
                         document.querySelectorAll(parentSel + ' ' + linkSelector).forEach(el => {
-                            if (el.href && el.href.includes('/maps/place/') && el.href.includes('/@')) {
+                            if (el.href && el.href.includes('/maps/place/') && el.href.includes('@')) {
                                 links.add(el.href);
                             }
                         });
                     } catch (e) { console.warn('Error querying parentSelector:', parentSel, e); }
                 });
             }
+            
+            // Last resort: search entire document if still not enough links
+            if (links.size < 3) {
+                try {
+                    document.querySelectorAll('a[href*="/maps/place/"]').forEach(el => {
+                        if (el.href && el.href.includes('/maps/place/') && 
+                            el.href.includes('@') && !el.href.includes('image?')) {
+                            links.add(el.href);
+                        }
+                    });
+                } catch (e) { console.warn('Error in global search:', e); }
+            }
+            
             return Array.from(links);
-            """
+        """
+        
+        # Improved selectors for finding results
+        item_selectors = [
+            RESULT_ITEM_SELECTOR,
+            "div[jsaction*='mouseover'], div.Nv2PK, a[href*='/maps/place/']",
+            "div[data-result-index]"
+        ]
+        
+        link_selectors = [
+            RESULT_LINK_SELECTOR,
+            "a[href*='/maps/place/']"
+        ]
+        
         # Combine primary and fallback selectors for the JS argument
-        all_parent_selectors = [RESULTS_PANEL_SELECTOR] + FALLBACK_RESULTS_PANEL_SELECTORS
+        all_parent_selectors = [
+            RESULTS_PANEL_SELECTOR,
+            "div[role='feed']", 
+            "div.m6QErb", 
+            "div.DxyBCb",
+            "div[role='region']",
+            "div[role='main']"
+        ]
 
+        # First extract links visible without scrolling
+        try:
+            initial_links = self.extract_visible_links(driver)
+            if initial_links:
+                links_found.update(initial_links)
+                self.logger.debug(f"Found {len(links_found)} links before scrolling.")
+        except Exception as initial_extract_err:
+            self.logger.warning(f"Error extracting initial links: {initial_extract_err}")
+
+        # Begin scrolling loop with improved error handling
         for i in range(max_scrolls):
             initial_link_count = len(links_found)
 
-            # Extract links *before* scrolling (to catch initial view and links loaded by previous scroll)
+            # Extract links *before* scrolling (to catch links loaded by previous scroll)
             try:
-                # Execute the JS script with selectors as arguments
-                new_links = driver.execute_script(js_script, RESULT_ITEM_SELECTOR, RESULT_LINK_SELECTOR, all_parent_selectors)
-                if new_links:
-                    links_found.update(new_links)
-                    self.logger.debug(f"Scroll iter {i+1}: Found {len(links_found)} total links so far.")
+                # Try different item selectors for more comprehensive coverage
+                for item_selector in item_selectors:
+                    for link_selector in link_selectors:
+                        try:
+                            # Execute the JS script with selectors as arguments
+                            new_links = driver.execute_script(js_script, item_selector, link_selector, all_parent_selectors)
+                            if new_links:
+                                links_found.update(new_links)
+                        except Exception as js_err:
+                            self.logger.debug(f"JS extraction failed with selectors {item_selector}, {link_selector}: {js_err}")
+                
+                self.logger.debug(f"Scroll iter {i+1}: Found {len(links_found)} total links so far.")
             except Exception as extract_err:
-                # Log the specific JS error if possible
-                self.logger.warning(f"Error extracting links during scroll iter {i+1}: {extract_err}", exc_info=self.debug)
+                self.logger.warning(f"Error extracting links during scroll iter {i+1}: {extract_err}")
 
+            # Check early exit conditions
+            if len(links_found) >= result_threshold:
+                self.logger.info(f"Reached result threshold ({result_threshold}) after {i+1} scrolls. Stopping.")
+                break
 
             # Check if new links were found in this iteration
             if len(links_found) == initial_link_count and i > 0: # Don't count first iteration
@@ -1479,23 +1983,76 @@ class GoogleMapsGridScraper:
             except Exception as end_marker_err:
                  self.logger.debug(f"Error checking for end of results marker: {end_marker_err}")
 
-
-            # Scroll down
+            # Scroll down with enhanced reliability
             current_scroll_height = -1
             try:
                 if scroll_element:
-                    last_scroll_height = driver.execute_script("return arguments[0].scrollHeight", scroll_element)
-                    driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scroll_element)
-                    time.sleep(scroll_pause / 2) # Short pause
-                    current_scroll_height = driver.execute_script("return arguments[0].scrollHeight", scroll_element)
-                else: # Scroll window
+                    try:
+                        # Use more resilient scrolling approach
+                        last_scroll_height = driver.execute_script("return arguments[0].scrollHeight", scroll_element)
+                        
+                        # Scroll to specific positions within the container for more reliable loading
+                        if i % 3 == 0:  # Every third scroll, go to middle then bottom
+                            driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight / 2", scroll_element)
+                            time.sleep(scroll_pause / 3)
+                            driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scroll_element)
+                        else:  # Regular scroll to bottom
+                            driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight", scroll_element)
+                        
+                        # Wait for scrolling animation and content loading
+                        time.sleep(scroll_pause / 2)
+                        
+                        # Try to trigger content loading with small scroll adjustments
+                        driver.execute_script("""
+                            const el = arguments[0];
+                            // Small up and down to trigger any lazy loading
+                            el.scrollTop = el.scrollHeight - 10;
+                            setTimeout(() => { el.scrollTop = el.scrollHeight; }, 100);
+                        """, scroll_element)
+                        
+                        time.sleep(scroll_pause / 3)
+                        current_scroll_height = driver.execute_script("return arguments[0].scrollHeight", scroll_element)
+                    except Exception as specific_scroll_err:
+                        self.logger.warning(f"Error during element scroll: {specific_scroll_err}")
+                        # Fall back to window scrolling if element scrolling fails
+                        scroll_element = None
+                        scroll_target_description = "window (fallback)"
+                else: # Scroll window with improved reliability
                     last_scroll_height = driver.execute_script("return document.body.scrollHeight")
-                    driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                    time.sleep(scroll_pause / 2) # Short pause
+                    
+                    # Use smoother scrolling to trigger all dynamic loading
+                    if i % 3 == 0:  # Every third scroll, use incremental scrolling
+                        driver.execute_script("""
+                            const totalHeight = document.body.scrollHeight;
+                            const steps = 3;
+                            for (let step = 1; step <= steps; step++) {
+                                setTimeout(() => {
+                                    window.scrollTo(0, (totalHeight * step) / steps);
+                                }, step * 100);
+                            }
+                        """)
+                    else:  # Regular scroll to bottom
+                        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                    
+                    # Wait for scrolling and content loading
+                    time.sleep(scroll_pause / 2)
+                    
+                    # Small adjustment to trigger any remaining lazy loading
+                    driver.execute_script("""
+                        window.scrollTo(0, document.body.scrollHeight - 10);
+                        setTimeout(() => { window.scrollTo(0, document.body.scrollHeight); }, 100);
+                    """)
+                    
+                    time.sleep(scroll_pause / 3)
                     current_scroll_height = driver.execute_script("return document.body.scrollHeight")
 
                 self.logger.debug(f"Scrolled {scroll_target_description} (Iter {i+1}/{max_scrolls}). Height: {last_scroll_height} -> {current_scroll_height}")
-                time.sleep(scroll_pause / 2 + random.uniform(0, 0.3)) # Wait for potential content load
+                
+                # Add a small random delay to appear more human-like
+                if self.config.get("randomize_delays", True):
+                    time.sleep(random.uniform(0, 0.5))
+                else:
+                    time.sleep(scroll_pause / 4)
 
                 # Check if scroll height changed significantly
                 if abs(current_scroll_height - last_scroll_height) < 50 and i > 0: # If height didn't change much
@@ -1509,17 +2066,25 @@ class GoogleMapsGridScraper:
                 stagnant_scroll_count += 1 # Count as stagnant if scroll fails
 
             # Break if stagnant for too long (either no new links or no scroll height change)
-            # Increase tolerance slightly
+            # More tolerant stagnation checks
             if stagnant_scroll_count >= 4 or stagnant_link_count >= 4:
                 self.logger.info(f"Scrolling stopped after {i+1} scrolls due to stagnant content (Scroll:{stagnant_scroll_count}, Link:{stagnant_link_count}).")
                 break
+
+        # Final link extraction pass after all scrolling is complete
+        try:
+            final_links = self.extract_visible_links(driver)
+            if final_links:
+                links_found.update(final_links)
+        except Exception as final_extract_err:
+            self.logger.warning(f"Error in final link extraction: {final_extract_err}")
 
         self.logger.info(f"Finished scrolling. Found {len(links_found)} total unique links.")
         return list(links_found)
 
 
     def extract_place_info(self, url, driver):
-        """Extract business information from a Google Maps place URL"""
+        """Extract business information from a Google Maps place URL with improved reliability"""
         thread_id = threading.get_ident() # Identify thread for logging
 
         # --- Pre-checks ---
@@ -1555,69 +2120,102 @@ class GoogleMapsGridScraper:
             "website": "",
             "rating": "",
             "reviews_count": "",
-            "email": ""
-            # grid_cell will be added by the calling function (process_grid_cell)
+            "email": "",
+            "opening_hours": "", # New field
+            "price_level": "",   # New field
+            "reviews": [],       # New field for review snippets
+            "popular_times": "", # New field
+            "features": []       # New field for business features/attributes
         })
 
         try:
-            # --- Load Page ---
-            driver.get(url)
-            # Wait for the main heading (business name) to be present, indicating page load
+            # --- Load Page with improved error handling ---
             try:
-                WebDriverWait(driver, 20).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "h1")) # Wait for H1
-                )
-            except TimeoutException:
-                 self.logger.warning(f"Thread {thread_id} - Timeout waiting for H1 (name) on place page: {url[:80]}")
-                 # Check if it's a redirect back to search
-                 if "google.com/maps/search" in driver.current_url:
-                     self.logger.warning(f"Thread {thread_id} - Redirected back to search page from place URL: {url[:80]}... Skipping.")
-                     return None
-                 # Otherwise, might be a slow load or different structure, proceed cautiously
+                driver.get(url)
+                
+                # Add random delay to appear more human-like
+                if self.config.get("randomize_delays", True):
+                    time.sleep(random.uniform(2.0, 4.0))
+                else:
+                    time.sleep(3.0)
+                    
+                # Wait for the main heading or other key elements to be present
+                try:
+                    # Try multiple selectors to determine when page is ready
+                    ready_selectors = [
+                        "h1", 
+                        "h1.DUwDvf", 
+                        "h1[class*='header']", 
+                        "div[role='main'] h1",
+                        "button[data-item-id='address']",
+                        "div.rogA2c",  # Common Maps business info container
+                        "div.LBgpqf" # Another Maps container
+                    ]
+                    
+                    # Wait for at least one selector to be present
+                    for selector in ready_selectors:
+                        try:
+                            WebDriverWait(driver, 5).until(
+                                EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                            )
+                            self.logger.debug(f"Page ready detected with selector: {selector}")
+                            break
+                        except TimeoutException:
+                            continue
+                except TimeoutException:
+                    self.logger.warning(f"Thread {thread_id} - Timeout waiting for page elements on place page: {url[:80]}")
+                    # Check for redirects or error states
+                    current_url = driver.current_url
+                    if "google.com/maps/search" in current_url and url != current_url:
+                        self.logger.warning(f"Thread {thread_id} - Redirected back to search page from place URL: {url[:80]}... Skipping.")
+                        return None
+                    if "sorry/index" in current_url or "consent" in current_url:
+                        self.logger.warning(f"Thread {thread_id} - Rate limited or consent required: {current_url}")
+                        return None
+                    # Continue anyway, as some elements might still be accessible
+            
+                # Handle consent/login if it appears on the place page
+                if self.consent_handler.handle_consent(driver, self.debug, self.debug_dir):
+                    self.stats["consent_pages_handled"] += 1
+                    time.sleep(random.uniform(1, 2))
 
-            time.sleep(random.uniform(1.0, 2.0)) # Short additional wait for dynamic elements
-
-            # Handle consent/login again if it appears on the place page
-            if self.consent_handler.handle_consent(driver, self.debug, self.debug_dir):
-                self.stats["consent_pages_handled"] += 1
-                time.sleep(random.uniform(1, 2))
-
-            # Check for rate limit / redirection after load
-            current_page_url = driver.current_url
-            if "sorry/index" in current_page_url or "consent" in current_page_url or "batchexecute" in current_page_url:
-                with self.lock: self.stats["rate_limit_hits"] += 1
-                self.logger.warning(f"Thread {thread_id} - Hit rate limit/consent page loading place: {url[:60]}...")
+                # Additional check for rate limit / redirection after load
+                current_page_url = driver.current_url
+                if "sorry/index" in current_page_url or "consent" in current_page_url or "batchexecute" in current_page_url:
+                    with self.lock: self.stats["rate_limit_hits"] += 1
+                    self.logger.warning(f"Thread {thread_id} - Hit rate limit/consent page loading place: {url[:60]}...")
+                    return None
+                if "google.com/maps/search" in current_page_url and url != current_page_url: # If redirected back to search
+                    self.logger.warning(f"Thread {thread_id} - Redirected back to search page from place URL: {url[:80]}...")
+                    return None
+                    
+            except TimeoutException as to_err:
+                self.logger.warning(f"Thread {thread_id} - Timeout loading place page: {url[:80]} - {to_err}")
                 return None
-            if "google.com/maps/search" in current_page_url and url != current_page_url: # If redirected back to search
-                self.logger.warning(f"Thread {thread_id} - Redirected back to search page from place URL: {url[:80]}...")
+            except Exception as load_err:
+                self.logger.error(f"Thread {thread_id} - Error loading place page: {url[:80]} - {load_err}")
                 return None
 
             # --- Extract Core Information ---
-            # Prioritize JS extraction as it's often more reliable if elements are found
+            # Enhanced JavaScript extraction first (more comprehensive)
             try:
-                js_data = driver.execute_script(self._get_js_extraction_script())
+                js_data = driver.execute_script(self._get_enhanced_js_extraction_script())
                 if js_data:
-                    # Update place_info only with non-empty values from JS
+                    # Update place_info with data from JS
                     for key, value in js_data.items():
-                        if value and key in place_info: # Ensure key exists
+                        if value and key in place_info:
                             place_info[key] = value
-                    self.logger.debug(f"Thread {thread_id} - JS extracted data for {url[:60]}: { {k:v for k,v in js_data.items() if v} }") # Log non-empty extracted
+                        elif key == "features" and value:
+                            place_info["features"] = value  # List of features/attributes
+                        elif key == "reviews" and value:
+                            place_info["reviews"] = value[:3]  # Store up to 3 review snippets
+                    self.logger.debug(f"Thread {thread_id} - JS extracted data for {url[:60]}")
             except Exception as js_err:
                 self.logger.warning(f"Thread {thread_id} - JS extraction failed for {url[:60]}: {js_err}")
 
             # --- Fallback/Supplement with Selenium Finders ---
-            # Name (Crucial - try multiple selectors)
-            if not place_info["name"]:
-                name_selectors = ["h1", "h1[class*='headline']", "h1[class*='header']", "[role='main'] h1", "div[role='main'] div[tabindex='-1'] > div:first-child"] # Added more specific path
-                for sel in name_selectors:
-                    try:
-                        name_el = driver.find_element(By.CSS_SELECTOR, sel)
-                        place_info["name"] = name_el.text.strip()
-                        if place_info["name"]:
-                             self.logger.debug(f"Extracted name via Selenium selector: {sel}")
-                             break
-                    except NoSuchElementException: continue
-                    except Exception as e: self.logger.debug(f"Name selector {sel} error: {e}")
+            # Only extract with Selenium if we didn't get the data via JS
+            self._selenium_fallback_extraction(driver, place_info)
 
             # If still no name, it's likely a failed load or weird page
             if not place_info["name"]:
@@ -1629,73 +2227,18 @@ class GoogleMapsGridScraper:
                 with self.lock: self.stats["extraction_errors"] += 1
                 return None # Cannot proceed without a name
 
-            # Address (More specific selectors)
-            if not place_info["address"]:
-                try:
-                    # Look for button with address icon/tooltip and specific data-item-id
-                    addr_el = driver.find_element(By.CSS_SELECTOR, "button[data-item-id='address'] div.Io6YTe") # Inner div often holds text
-                    place_info["address"] = addr_el.text.strip()
-                except Exception:
-                    try: # Fallback to aria-label
-                        addr_el = driver.find_element(By.CSS_SELECTOR, "button[aria-label*='Address:']")
-                        place_info["address"] = addr_el.get_attribute('aria-label').replace("Address:", "").strip()
-                    except Exception as e: self.logger.debug(f"Address extraction failed: {e}")
-
-            # Phone
-            if not place_info["phone"]:
-                try:
-                    phone_el = driver.find_element(By.CSS_SELECTOR, "button[data-item-id^='phone:tel:'] div.Io6YTe")
-                    place_info["phone"] = phone_el.text.strip()
-                except Exception:
-                    try:
-                        phone_el = driver.find_element(By.CSS_SELECTOR, "button[aria-label*='Phone:']")
-                        place_info["phone"] = phone_el.get_attribute('aria-label').replace("Phone:", "").strip()
-                    except Exception as e: self.logger.debug(f"Phone extraction failed: {e}")
-
-            # Website
-            if not place_info["website"]:
-                try:
-                    web_el = driver.find_element(By.CSS_SELECTOR, "a[data-item-id='authority']")
-                    place_info["website"] = web_el.get_attribute('href')
-                except Exception:
-                    try:
-                        web_el = driver.find_element(By.CSS_SELECTOR, "a[aria-label*='Website:']")
-                        place_info["website"] = web_el.get_attribute('href')
-                    except Exception as e: self.logger.debug(f"Website extraction failed: {e}")
-
-            # Category (often near rating)
-            if not place_info["category"]:
-                try:
-                    # Look for button next to rating/reviews OR a specific class
-                    cat_el = driver.find_element(By.CSS_SELECTOR, "button[jsaction*='category'], div.fontBodyMedium > span > span > button") # Added alternative selector
-                    place_info["category"] = cat_el.text.strip()
-                except Exception as e: self.logger.debug(f"Category extraction failed: {e}")
-
-            # Rating & Reviews (often together)
-            if not place_info["rating"] or not place_info["reviews_count"]:
-                try:
-                    # Common pattern: Span with rating, span with num reviews in parentheses
-                    rating_area = driver.find_element(By.CSS_SELECTOR, "div.F7nice") # Container div
-                    rating_span = rating_area.find_element(By.CSS_SELECTOR, "span[aria-hidden='true']") # The number itself
-                    review_span = rating_area.find_element(By.CSS_SELECTOR, "span[aria-label*='reviews'], span[aria-label*='review']") # Span like "(1,234)" or "1 review"
-                    if not place_info["rating"]:
-                         place_info["rating"] = rating_span.text.strip()
-                    if not place_info["reviews_count"]:
-                         review_text = review_span.text.strip()
-                         # Extract only digits
-                         review_count_match = re.search(r'(\d{1,3}(?:,\d{3})*|\d+)', review_text)
-                         if review_count_match:
-                              place_info["reviews_count"] = review_count_match.group(1).replace(',','')
-                except Exception as e: self.logger.debug(f"Rating/Review extraction failed: {e}")
-
             # --- Additional Extractions ---
             # Coordinates (re-extract from current URL in case it updated)
             place_info["coordinates"] = self.extract_coordinates_from_url(driver.current_url)
 
             # Social Media Links
             if self.config["extract_social"]:
-                try: place_info["social_links"] = self.extract_social_media_links(driver)
-                except Exception as e: self.logger.warning(f"Social link extraction failed: {e}")
+                try: 
+                    social_links = self.extract_social_media_links(driver)
+                    if social_links:
+                        place_info["social_links"] = social_links
+                except Exception as e: 
+                    self.logger.warning(f"Social link extraction failed: {e}")
 
             # Email (only if website found and enabled)
             if place_info["website"] and self.config["extract_emails"]:
@@ -1741,9 +2284,14 @@ class GoogleMapsGridScraper:
                 self.processed_links.add(url) # Add to processed only on success
 
             # Log business details to dedicated file
-            business_log = {k: v for k, v in place_info.items() if k != 'social_links'} # Exclude dict
+            business_log = {k: v for k, v in place_info.items() if k not in ['social_links', 'reviews']} # Exclude complex fields
             if place_info.get("social_links"):
-                business_log.update(place_info["social_links"]) # Flatten social links
+                business_log.update({f"social_{k}": v for k, v in place_info["social_links"].items()}) # Flatten social links
+            
+            # Add review count rather than full review content
+            if place_info.get("reviews"):
+                business_log["review_snippets_count"] = len(place_info["reviews"])
+            
             self.business_logger.info(json.dumps(business_log))
 
             return dict(place_info) # Convert back to regular dict
@@ -1752,97 +2300,643 @@ class GoogleMapsGridScraper:
             self.logger.error(f"Thread {thread_id} - Error extracting place info for {url[:80]}: {e}", exc_info=self.debug)
             with self.lock: self.stats["extraction_errors"] += 1
             # Don't add to processed_links on error
-            # Report error to the browser pool for the main driver used for this place
-            # Need to pass the correct browser_id here if possible, or handle it in the caller
             return None
 
 
-    def _get_js_extraction_script(self):
-        """Returns the JavaScript code string for extracting business info."""
-        # This keeps the main extract_place_info cleaner
-        # Uses more robust selectors and handles potential null values
+    def _selenium_fallback_extraction(self, driver, place_info):
+        """Fallback extraction using Selenium when JavaScript extraction fails"""
+        # Only try to extract values that weren't already found
+        
+        # Name (Crucial - try multiple selectors)
+        if not place_info["name"]:
+            name_selectors = [
+                "h1", 
+                "h1.DUwDvf", 
+                "h1[class*='headline']", 
+                "h1[class*='header']", 
+                "[role='main'] h1", 
+                "div[role='main'] div[tabindex='-1'] > div:first-child"
+            ]
+            for sel in name_selectors:
+                try:
+                    name_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                    for name_el in name_elements:
+                        candidate_name = name_el.text.strip()
+                        if candidate_name and len(candidate_name) > 1:
+                            place_info["name"] = candidate_name
+                            self.logger.debug(f"Extracted name via Selenium selector: {sel}")
+                            break
+                    if place_info["name"]:
+                        break
+                except Exception as e: 
+                    self.logger.debug(f"Name selector {sel} error: {e}")
+
+        # Address (Multiple selectors for different UI versions)
+        if not place_info["address"]:
+            address_selectors = [
+                "button[data-item-id='address'] div.Io6YTe",
+                "button[aria-label*='Address:']",
+                "button[aria-label*='address']",
+                "div[data-tooltip='Copy address']",
+                "button[data-tooltip='Copy address']",
+                "div.rogA2c div:nth-child(1)",  # First item in info section
+                "div.LBgpqf div:nth-child(1)"   # Alternative info container
+            ]
+            
+            for sel in address_selectors:
+                try:
+                    addr_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                    for addr_el in addr_elements:
+                        # Try getting text content first
+                        addr_text = addr_el.text.strip()
+                        
+                        # If no text, try aria-label attribute
+                        if not addr_text and 'aria-label' in sel:
+                            addr_text = addr_el.get_attribute('aria-label')
+                            if addr_text:
+                                addr_text = addr_text.replace("Address:", "").strip()
+                        
+                        if addr_text and len(addr_text) > 5:  # Basic validation
+                            place_info["address"] = addr_text
+                            self.logger.debug(f"Extracted address via selector: {sel}")
+                            break
+                    
+                    if place_info["address"]:
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Address selector {sel} error: {e}")
+
+        # Phone
+        if not place_info["phone"]:
+            phone_selectors = [
+                "button[data-item-id^='phone:tel:'] div.Io6YTe",
+                "button[aria-label*='Phone:']",
+                "button[aria-label*='phone']",
+                "div[data-tooltip='Copy phone number']",
+                "button[data-tooltip='Copy phone number']",
+                "div.rogA2c div:nth-child(2)",  # Often second item in info
+                "div.LBgpqf div:nth-child(2)"   # Alternative container
+            ]
+            
+            for sel in phone_selectors:
+                try:
+                    phone_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                    for phone_el in phone_elements:
+                        # Try getting text content first
+                        phone_text = phone_el.text.strip()
+                        
+                        # If no text, try aria-label attribute
+                        if not phone_text and 'aria-label' in sel:
+                            phone_text = phone_el.get_attribute('aria-label')
+                            if phone_text:
+                                phone_text = phone_text.replace("Phone:", "").strip()
+                        
+                        # Basic phone number validation
+                        if phone_text and ('+' in phone_text or any(c.isdigit() for c in phone_text)):
+                            place_info["phone"] = phone_text
+                            self.logger.debug(f"Extracted phone via selector: {sel}")
+                            break
+                    
+                    if place_info["phone"]:
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Phone selector {sel} error: {e}")
+
+        # Website
+        if not place_info["website"]:
+            website_selectors = [
+                "a[data-item-id='authority']",
+                "a[aria-label*='Website:']",
+                "a[data-tooltip='Open website']",
+                "div.rogA2c a[target='_blank']",
+                "div.LBgpqf a[target='_blank']"
+            ]
+            
+            for sel in website_selectors:
+                try:
+                    web_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                    for web_el in web_elements:
+                        website_url = web_el.get_attribute('href')
+                        
+                        # Skip Google-related links and maps links
+                        if website_url and not website_url.startswith('https://www.google.com/') and '/maps/' not in website_url:
+                            place_info["website"] = website_url
+                            self.logger.debug(f"Extracted website via selector: {sel}")
+                            break
+                    
+                    if place_info["website"]:
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Website selector {sel} error: {e}")
+
+        # Category
+        if not place_info["category"]:
+            category_selectors = [
+                "button[jsaction*='category']", 
+                "div.fontBodyMedium > span > span > button",
+                "span.YhemCb",  # Common category container
+                "span.DkEaL",   # Alternative category container
+                "div[role='main'] button.vwVdIc",
+                "div.LBgpqf span.YhemCb"
+            ]
+            
+            for sel in category_selectors:
+                try:
+                    cat_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                    for cat_el in cat_elements:
+                        cat_text = cat_el.text.strip()
+                        if cat_text and not cat_text.isdigit() and '$' not in cat_text:
+                            place_info["category"] = cat_text
+                            self.logger.debug(f"Extracted category via selector: {sel}")
+                            break
+                    
+                    if place_info["category"]:
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Category selector {sel} error: {e}")
+
+        # Rating & Reviews
+        if not place_info["rating"] or not place_info["reviews_count"]:
+            rating_selectors = [
+                "div.F7nice", # Common rating container
+                "span.fontDisplayLarge",  # Rating value
+                "div.MyEned", # Alternative rating container
+                "div.LBgpqf span.fontDisplayLarge",
+                "div.rogA2c span.fontDisplayLarge",
+                "div[role='main'] div.MyEned"
+            ]
+            
+            for sel in rating_selectors:
+                try:
+                    rating_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                    for rating_el in rating_elements:
+                        # Try to find rating value
+                        if not place_info["rating"]:
+                            rating_value_el = rating_el.find_element(By.CSS_SELECTOR, "span[aria-hidden='true']")
+                            rating_text = rating_value_el.text.strip()
+                            if rating_text and '.' in rating_text:
+                                place_info["rating"] = rating_text
+                        
+                        # Try to find review count
+                        if not place_info["reviews_count"]:
+                            review_elements = rating_el.find_elements(By.CSS_SELECTOR, "span[aria-label*='reviews'], span[aria-label*='review']")
+                            if review_elements:
+                                review_text = review_elements[0].text.strip()
+                                # Extract only digits
+                                review_count_match = re.search(r'(\d{1,3}(?:,\d{3})*|\d+)', review_text)
+                                if review_count_match:
+                                    place_info["reviews_count"] = review_count_match.group(1).replace(',','')
+                    
+                    if place_info["rating"] and place_info["reviews_count"]:
+                        self.logger.debug(f"Extracted rating and reviews via selector: {sel}")
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Rating/Review selector {sel} error: {e}")
+
+        # Hours (if not already extracted)
+        if not place_info["opening_hours"] and self.config.get("extract_hours", True):
+            hours_selectors = [
+                "div[data-attrid='kc:/location/location:hours'] div.webanswers-webanswers_table__webanswers-table", # Older format
+                "div[jslog*='opening_hours'] div.MkV7Qc", # Hours container
+                "div[jslog*='opening_hours'] table.WgFkxc", # Hours table
+                "div[data-attrid='kc:/local:hours by day'] div.webanswers-webanswers_table__webanswers-table",
+                "div[data-attrid='kc:/location/location:hours'] table",
+                "div.LBgpqf div[jslog*='hours']",
+                "div.rogA2c div[jslog*='hours']"
+            ]
+            
+            for sel in hours_selectors:
+                try:
+                    hours_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                    for hours_el in hours_elements:
+                        hours_text = hours_el.text.strip()
+                        if hours_text and len(hours_text) > 10:
+                            # Clean up hours text for consistent format
+                            hours_text = hours_text.replace('\n', '; ').replace('day', 'day:')
+                            place_info["opening_hours"] = hours_text
+                            self.logger.debug(f"Extracted hours via selector: {sel}")
+                            break
+                    
+                    if place_info["opening_hours"]:
+                        break
+                except Exception as e:
+                    self.logger.debug(f"Hours selector {sel} error: {e}")
+                    
+            # Try clicking the hours button to expand if not found
+            if not place_info["opening_hours"]:
+                try:
+                    hours_buttons = driver.find_elements(By.CSS_SELECTOR, "button[data-item-id='oh'], button[aria-label*='hour'], button[data-tooltip*='hour']")
+                    for hours_btn in hours_buttons:
+                        if hours_btn.is_displayed():
+                            self.logger.debug("Clicking hours button to expand")
+                            hours_btn.click()
+                            time.sleep(1)  # Wait for expansion
+                            
+                            # Try to extract hours after expansion
+                            for sel in hours_selectors:
+                                try:
+                                    hours_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                                    for hours_el in hours_elements:
+                                        hours_text = hours_el.text.strip()
+                                        if hours_text and len(hours_text) > 10:
+                                            place_info["opening_hours"] = hours_text.replace('\n', '; ')
+                                            break
+                                    if place_info["opening_hours"]:
+                                        break
+                                except Exception:
+                                    continue
+                                    
+                            # Try to close the expanded panel to avoid issues with future extractions
+                            try:
+                                close_buttons = driver.find_elements(By.CSS_SELECTOR, "button[aria-label='Close'], button.VfPpkd-icon-LgbsSe')
+                                for close_btn in close_buttons:
+                                    if close_btn.is_displayed():
+                                        close_btn.click()
+                                        break
+                            except Exception:
+                                pass
+                                
+                            if place_info["opening_hours"]:
+                                break
+                except Exception as click_err:
+                    self.logger.debug(f"Error clicking hours button: {click_err}")
+
+        # Extract reviews if enabled and not already found
+        if not place_info["reviews"] and self.config.get("extract_reviews", True):
+            try:
+                # First check if review panel is already open
+                review_selectors = [
+                    "div.jANrlb div.wiI7pd",  # Review text containers
+                    "div.SEmwNb div.wiI7pd",  # Alternative review container
+                    "div[data-review-id] div.MyEned", # Review with ID
+                    "div.rogA2c div.jftiEf", # Review section
+                    "div.LBgpqf div.jftiEf"  # Alternative review section
+                ]
+                
+                reviews_found = []
+                for sel in review_selectors:
+                    review_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                    for review_el in review_elements[:3]:  # Limit to first 3 reviews
+                        review_text = review_el.text.strip()
+                        if review_text and len(review_text) > 10:
+                            reviews_found.append(review_text)
+                
+                # If no reviews found, try to click on reviews tab/link to load them
+                if not reviews_found:
+                    review_tab_selectors = [
+                        "button[data-tab-index='1']",  # Common reviews tab
+                        "a[href*='#reviews']",
+                        "div[jslog*='reviews'] button",
+                        "div.rogA2c button[jsaction*='reviews']",
+                        "div.LBgpqf button[jsaction*='reviews']"
+                    ]
+                    
+                    for tab_sel in review_tab_selectors:
+                        try:
+                            tab_elements = driver.find_elements(By.CSS_SELECTOR, tab_sel)
+                            for tab_el in tab_elements:
+                                if tab_el.is_displayed():
+                                    self.logger.debug("Clicking reviews tab")
+                                    tab_el.click()
+                                    time.sleep(1.5)  # Wait for reviews to load
+                                    
+                                    # Now try to extract reviews again
+                                    for sel in review_selectors:
+                                        review_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                                        for review_el in review_elements[:3]:
+                                            review_text = review_el.text.strip()
+                                            if review_text and len(review_text) > 10:
+                                                reviews_found.append(review_text)
+                                    
+                                    if reviews_found:
+                                        break
+                        except Exception:
+                            continue
+                        
+                        if reviews_found:
+                            break
+                
+                # Store found reviews
+                if reviews_found:
+                    place_info["reviews"] = reviews_found[:3]  # Limit to 3 reviews
+                    self.logger.debug(f"Extracted {len(reviews_found)} reviews")
+            except Exception as review_err:
+                self.logger.debug(f"Error extracting reviews: {review_err}")
+
+        # Extract price level if not already found
+        if not place_info["price_level"]:
+            try:
+                price_selectors = [
+                    "span.mgr77e", # Common price level indicator
+                    "span.LMaH6e", # Alternative price container
+                    "span[aria-label*='Price: ']",
+                    "div.mgr77e"   # Another price container
+                ]
+                
+                for sel in price_selectors:
+                    price_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                    for price_el in price_elements:
+                        price_text = price_el.text.strip()
+                        if price_text and ('$' in price_text or '€' in price_text or '£' in price_text):
+                            place_info["price_level"] = price_text
+                            self.logger.debug(f"Extracted price level via selector: {sel}")
+                            break
+                    
+                    if place_info["price_level"]:
+                        break
+            except Exception as price_err:
+                self.logger.debug(f"Error extracting price level: {price_err}")
+
+        # Extract business features/attributes if not already found
+        if not place_info["features"]:
+            try:
+                feature_selectors = [
+                    "div.RcCsl[role='region'] div.NGLtO", # Features section
+                    "div.cW8rTb div.MGLtgb", # Service options
+                    "div.aLfhNb div.dbeHre", # Amenities
+                    "div.LBgpqf div.MGLtgb" # Alternative container
+                ]
+                
+                features = []
+                for sel in feature_selectors:
+                    feature_elements = driver.find_elements(By.CSS_SELECTOR, sel)
+                    for feature_el in feature_elements:
+                        feature_text = feature_el.text.strip()
+                        if feature_text:
+                            features.extend([f.strip() for f in feature_text.split('\n') if f.strip()])
+                
+                if features:
+                    place_info["features"] = features
+                    self.logger.debug(f"Extracted {len(features)} business features")
+            except Exception as feature_err:
+                self.logger.debug(f"Error extracting business features: {feature_err}")
+
+
+    def _get_enhanced_js_extraction_script(self):
+        """Returns the enhanced JavaScript code string for extracting business info with better coverage."""
         return """
             function extractBusinessInfo() {
-                const data = { name: "", address: "", phone: "", website: "", rating: "", reviews_count: "", category: "", hours: "", price_level: "" };
-
-                const getText = (selector, attribute = 'textContent') => {
-                    const el = document.querySelector(selector);
-                    if (!el) return "";
-                    let value = attribute === 'textContent' ? el.textContent : el.getAttribute(attribute);
-                    // Additional cleanup for text content
-                    if (attribute === 'textContent' && value) {
-                         value = value.replace(/\\s+/g, ' ').trim(); // Replace multiple spaces/newlines with single space
-                    }
-                    return value ? value.trim() : "";
+                const data = {
+                    name: "", 
+                    address: "", 
+                    phone: "", 
+                    website: "", 
+                    rating: "", 
+                    reviews_count: "", 
+                    category: "", 
+                    opening_hours: "", 
+                    price_level: "",
+                    features: [],
+                    reviews: []
                 };
 
-                const getTextFromMultiple = (selectors, attribute = 'textContent') => {
+                // Enhanced text extraction function with multiple strategies
+                const getText = (selectors, attribute = 'textContent') => {
+                    if (typeof selectors === 'string') {
+                        selectors = [selectors];
+                    }
+                    
                     for (const selector of selectors) {
-                        const text = getText(selector, attribute);
-                        if (text) return text;
+                        try {
+                            const elements = document.querySelectorAll(selector);
+                            for (const el of elements) {
+                                if (!el || !el.isConnected) continue;
+                                
+                                let value;
+                                if (attribute === 'textContent' || attribute === 'innerText') {
+                                    value = el[attribute];
+                                } else {
+                                    value = el.getAttribute(attribute);
+                                }
+                                
+                                // Clean the text
+                                if (value) {
+                                    value = value.replace(/\\s+/g, ' ').trim();
+                                    if (value.length > 0) return value;
+                                }
+                            }
+                        } catch (e) {
+                            console.warn(`Error with selector "${selector}":`, e);
+                        }
                     }
                     return "";
                 };
 
-                // Name (try h1 first, then other common header elements)
-                data.name = getText('h1') || getText('h1[class*="headline"]') || getText('[role="main"] h1');
-
-                // Address (look for button with address icon or specific aria-label)
-                data.address = getText('button[data-item-id="address"] div.Io6YTe') || getTextFromMultiple(['button[aria-label*="Address:"]', 'button[aria-label*="Adresse:"]'], 'aria-label').replace(/Address:|Adresse:/gi, '').trim();
-
-                // Phone (look for button with phone icon or specific aria-label)
-                data.phone = getText('button[data-item-id^="phone:tel:"] div.Io6YTe') || getTextFromMultiple(['button[aria-label*="Phone:"]', 'button[aria-label*="Telefon:"]'], 'aria-label').replace(/Phone:|Telefon:/gi, '').trim();
-
-                // Website (look for authority link or website icon link)
-                data.website = getText('a[data-item-id="authority"]', 'href') || getTextFromMultiple(['a[aria-label*="Website:"]', 'a[aria-label*="Site Web:"]'], 'href');
-
-                // Rating & Reviews (common structure)
-                try {
-                    const ratingEl = document.querySelector('div.F7nice'); // Common container
-                    if (ratingEl) {
-                        const ratingValEl = ratingEl.querySelector('span[aria-hidden="true"]');
-                        const reviewCountEl = ratingEl.querySelector('span[aria-label*="reviews"], span[aria-label*="review"], span[aria-label*="avis"], span[aria-label*="Bewertungen"]'); // Add languages
-
-                        if (ratingValEl) data.rating = ratingValEl.textContent.trim();
-                        if (reviewCountEl) {
-                             const reviewText = reviewCountEl.textContent.trim();
-                             const countMatch = reviewText.match(/(\\d{1,3}(?:[,.]\\d{3})*|\\d+)/); // Match numbers with optional separators
-                             if (countMatch) data.reviews_count = countMatch[0].replace(/[,.]/g, ''); // Remove separators
+                // Find all elements that match a selector and extract their text
+                const getAllText = (selectors, limit = 10) => {
+                    if (typeof selectors === 'string') {
+                        selectors = [selectors];
+                    }
+                    
+                    const results = [];
+                    for (const selector of selectors) {
+                        try {
+                            const elements = document.querySelectorAll(selector);
+                            for (const el of elements) {
+                                if (!el || !el.isConnected) continue;
+                                
+                                const text = el.textContent.replace(/\\s+/g, ' ').trim();
+                                if (text && text.length > 0) {
+                                    results.push(text);
+                                    if (results.length >= limit) return results;
+                                }
+                            }
+                        } catch (e) {
+                            console.warn(`Error with getAllText "${selector}":`, e);
                         }
                     }
-                } catch (e) { console.warn("JS Error extracting rating/reviews:", e); }
+                    return results;
+                };
 
-                // Category (button near rating or specific structure)
-                data.category = getText('button[jsaction*="category"]') || getText('div.fontBodyMedium > span > span > button');
+                // Name - Try multiple selectors
+                data.name = getText([
+                    'h1', 
+                    'h1.DUwDvf', 
+                    'h1[class*="headline"]', 
+                    'h1[class*="header"]', 
+                    '[role="main"] h1'
+                ]);
 
-                // Price Level (span with $ signs, often combined with category)
-                 try {
-                     const priceAndCatEl = document.querySelector('span[aria-label*="Price"]'); // Might be like "$$ · Category"
-                     if (priceAndCatEl) {
-                         const priceMatch = priceAndCatEl.textContent.match(/^([$€£]+)/); // Match leading currency symbols
-                         if (priceMatch) data.price_level = priceMatch[1];
-                         // Optionally extract category again if it wasn't found before and is here
-                         if (!data.category && priceAndCatEl.textContent.includes('·')) {
-                              data.category = priceAndCatEl.textContent.split('·')[1]?.trim() || "";
-                         }
-                     }
-                 } catch(e) { console.warn("JS Error extracting price level:", e); }
+                // Address - Look for address elements in different UI variants
+                data.address = getText([
+                    'button[data-item-id="address"] div.Io6YTe',
+                    'button[aria-label*="Address:"]',
+                    'button[data-tooltip="Copy address"]',
+                    'div[data-tooltip="Copy address"]',
+                    'div.rogA2c div:nth-child(1)', // First entry in info section is often address
+                    'div.eIuirG button div' // Another address container
+                ]);
+                
+                // If address was found in aria-label, clean it
+                if (data.address.toLowerCase().includes('address:')) {
+                    data.address = data.address.replace(/address:/i, '').trim();
+                }
 
+                // Phone - Multiple selectors for phone extraction
+                data.phone = getText([
+                    'button[data-item-id^="phone:tel:"] div.Io6YTe',
+                    'button[aria-label*="Phone:"]',
+                    'button[data-tooltip="Copy phone number"]',
+                    'div[data-tooltip="Copy phone number"]',
+                    'div.rogA2c div:nth-child(2)' // Second entry often contains phone
+                ]);
+                
+                // Clean phone number if found in aria-label
+                if (data.phone.toLowerCase().includes('phone:')) {
+                    data.phone = data.phone.replace(/phone:/i, '').trim();
+                }
 
-                // Hours (more complex, often needs clicking - basic attempt)
-                 try {
-                     const hoursButton = document.querySelector('button[data-item-id="oh"]'); // Button to potentially open hours
-                     if (hoursButton) {
-                          // Simple extraction if hours are directly visible in aria-label or nearby element
-                          data.hours = hoursButton.getAttribute('aria-label') || "";
-                          if (!data.hours) {
-                               const hoursTextEl = hoursButton.querySelector('.Io6YTe'); // Common text container
-                               if (hoursTextEl) data.hours = hoursTextEl.textContent.trim();
-                          }
-                          // Remove prefixes like "Opening hours:"
-                          data.hours = data.hours.replace(/Opening hours:/i, '').trim();
-                     }
-                 } catch(e) { console.warn("JS Error extracting hours:", e); }
+                // Website - Find website link
+                data.website = getText([
+                    'a[data-item-id="authority"]',
+                    'a[aria-label*="Website:"]',
+                    'a[data-tooltip="Open website"]',
+                    'div.rogA2c a[target="_blank"]',
+                    'div.LBgpqf a[target="_blank"]'
+                ], 'href');
+                
+                // Filter out Google-related links that aren't actual business websites
+                if (data.website && (data.website.includes('google.com/') || data.website.includes('/maps/'))) {
+                    const nonGoogleLinks = document.querySelectorAll('a[href]:not([href*="google.com/"]):not([href*="/maps/"])');
+                    for (const link of nonGoogleLinks) {
+                        const href = link.getAttribute('href');
+                        if (href && href.includes('http') && !href.includes('google.com/') && !href.includes('/maps/')) {
+                            data.website = href;
+                            break;
+                        }
+                    }
+                }
+
+                // Rating & Reviews - Find the rating container and extract data
+                try {
+                    // Try multiple selectors for rating
+                    const ratingText = getText([
+                        'div.F7nice span[aria-hidden="true"]',
+                        'span.fontDisplayLarge[aria-hidden="true"]',
+                        'div.MyEned span[aria-hidden="true"]'
+                    ]);
+                    
+                    if (ratingText && ratingText.includes('.')) {
+                        data.rating = ratingText;
+                    }
+                    
+                    // Look for review count in multiple locations
+                    const reviewText = getText([
+                        'div.F7nice span[aria-label*="reviews"]',
+                        'div.F7nice span[aria-label*="review"]',
+                        'div.MyEned span[aria-label*="reviews"]',
+                        'span.fontBodyMedium span[aria-label*="review"]'
+                    ]);
+                    
+                    if (reviewText) {
+                        const countMatch = reviewText.match(/(\\d{1,3}(?:[,.]\\d{3})*|\\d+)/);
+                        if (countMatch) {
+                            data.reviews_count = countMatch[0].replace(/[,.]/g, '');
+                        }
+                    }
+                } catch (e) { 
+                    console.warn("JS Error extracting rating/reviews:", e); 
+                }
+
+                // Category
+                data.category = getText([
+                    'button[jsaction*="category"]',
+                    'div.fontBodyMedium > span > span > button',
+                    'span.YhemCb', // Common category span
+                    'span.DkEaL',  // Alternative category container
+                    'div[role="main"] button.vwVdIc'
+                ]);
+
+                // Price Level - Look for price indicators
+                try {
+                    const priceText = getText([
+                        'span.mgr77e', // Price level
+                        'span.LMaH6e',
+                        'span[aria-label*="Price: "]'
+                    ]);
+                    
+                    if (priceText && (priceText.includes('$') || priceText.includes('€') || priceText.includes('£'))) {
+                        data.price_level = priceText;
+                    }
+                } catch(e) { 
+                    console.warn("JS Error extracting price level:", e); 
+                }
+
+                // Opening Hours
+                try {
+                    // First try to find hours directly
+                    data.opening_hours = getText([
+                        'div[data-attrid="kc:/location/location:hours"] div.webanswers-webanswers_table__webanswers-table',
+                        'div[jslog*="opening_hours"] table.WgFkxc',
+                        'div[jslog*="opening_hours"] div.MkV7Qc'
+                    ]);
+                    
+                    // If not found, try extracting the text from the hours button
+                    if (!data.opening_hours) {
+                        data.opening_hours = getText([
+                            'button[data-item-id="oh"] div.Io6YTe',
+                            'button[aria-label*="hours"] div.Io6YTe',
+                            'button[aria-label*="Open"] div.Io6YTe'
+                        ]);
+                    }
+                    
+                    // Clean up hours text
+                    if (data.opening_hours) {
+                        data.opening_hours = data.opening_hours.replace(/\\n/g, '; ').replace(/opening hours:/i, '').trim();
+                    }
+                } catch(e) { 
+                    console.warn("JS Error extracting hours:", e); 
+                }
+
+                // Business Features/Attributes
+                try {
+                    const featureContainers = [
+                        'div.RcCsl[role="region"] div.NGLtO', // Features section
+                        'div.cW8rTb div.MGLtgb',             // Service options 
+                        'div.aLfhNb div.dbeHre'              // Amenities
+                    ];
+                    
+                    for (const selector of featureContainers) {
+                        const elements = document.querySelectorAll(selector);
+                        for (const el of elements) {
+                            const featureText = el.textContent.trim();
+                            if (featureText) {
+                                featureText.split('\\n').forEach(feature => {
+                                    const cleanFeature = feature.trim();
+                                    if (cleanFeature && !data.features.includes(cleanFeature)) {
+                                        data.features.push(cleanFeature);
+                                    }
+                                });
+                            }
+                        }
+                    }
+                } catch(e) {
+                    console.warn("JS Error extracting business features:", e);
+                }
+
+                // Extract Reviews
+                try {
+                    const reviewContainers = [
+                        'div.jANrlb div.wiI7pd',     // Review text containers
+                        'div.SEmwNb div.wiI7pd',     // Alternative review container
+                        'div[data-review-id] div.MyEned' // Review with ID
+                    ];
+                    
+                    // Get up to 3 reviews
+                    for (const selector of reviewContainers) {
+                        const reviewElements = document.querySelectorAll(selector);
+                        for (let i = 0; i < Math.min(reviewElements.length, 3); i++) {
+                            const reviewText = reviewElements[i].textContent.trim();
+                            if (reviewText && reviewText.length > 10 && !data.reviews.includes(reviewText)) {
+                                data.reviews.push(reviewText);
+                            }
+                        }
+                        
+                        if (data.reviews.length >= 3) break;
+                    }
+                } catch(e) {
+                    console.warn("JS Error extracting reviews:", e);
+                }
 
                 return data;
             }
@@ -1865,8 +2959,12 @@ class GoogleMapsGridScraper:
             parsed_url = urlparse(url)
             query_params = parse_qs(parsed_url.query)
             if 'place_id' in query_params: return query_params['place_id'][0]
+            
+            # Pattern 4: Extract from mid=([^&]+) parameter
+            mid_match = re.search(r'mid=([^&]+)', url)
+            if mid_match: return mid_match.group(1)
 
-            # Pattern 4: Look for !1s([a-zA-Z0-9-_:]+) anywhere in the path/query (less specific)
+            # Pattern 5: Look for !1s([a-zA-Z0-9-_:]+) anywhere in the path/query (less specific)
             match4 = re.search(r'!1s([a-zA-Z0-9-_:]+)', url)
             if match4: return match4.group(1)
 
@@ -1881,13 +2979,41 @@ class GoogleMapsGridScraper:
         """Extract coordinates (lat, lng) from a Google Maps URL"""
         if not url: return ""
         try:
-            # Regex to find @lat,lng,zoom z pattern
+            # Try multiple regex patterns to handle different URL formats
+            
+            # Pattern 1: @lat,lng,zoom pattern
             coords_match = re.search(r'@(-?\d+\.\d+),(-?\d+\.\d+),(\d+\.?\d*)z', url)
             if coords_match:
                 lat, lng = coords_match.group(1), coords_match.group(2)
                 # Basic validation for latitude and longitude ranges
                 if -90 <= float(lat) <= 90 and -180 <= float(lng) <= 180:
                     return f"{lat},{lng}"
+            
+            # Pattern 2: @lat,lng,data pattern
+            coords_match2 = re.search(r'@(-?\d+\.\d+),(-?\d+\.\d+)(?:,\d+\.?\d*)?[mz]/data', url)
+            if coords_match2:
+                lat, lng = coords_match2.group(1), coords_match2.group(2)
+                if -90 <= float(lat) <= 90 and -180 <= float(lng) <= 180:
+                    return f"{lat},{lng}"
+                    
+            # Pattern 3: ll=lat,lng pattern in query parameters
+            parsed_url = urlparse(url)
+            query_params = parse_qs(parsed_url.query)
+            if 'll' in query_params:
+                ll_parts = query_params['ll'][0].split(',')
+                if len(ll_parts) >= 2:
+                    lat, lng = ll_parts[0], ll_parts[1]
+                    if -90 <= float(lat) <= 90 and -180 <= float(lng) <= 180:
+                        return f"{lat},{lng}"
+            
+            # Try to find any coordinate-like pattern            
+            coords_match3 = re.search(r'[-+]?\d+\.\d+,[-+]?\d+\.\d+', url)
+            if coords_match3:
+                coords = coords_match3.group(0).split(',')
+                lat, lng = coords[0], coords[1]
+                if -90 <= float(lat) <= 90 and -180 <= float(lng) <= 180:
+                    return f"{lat},{lng}"
+                    
             self.logger.debug(f"Could not extract coordinates from URL: {url}")
             return ""
         except Exception as e:
@@ -1896,106 +3022,404 @@ class GoogleMapsGridScraper:
 
 
     def extract_social_media_links(self, driver):
-        """Extract social media links from a business page using JS"""
+        """Extract social media links from a business page using enhanced JS"""
         self.logger.debug("Attempting to extract social media links...")
         try:
             social_links = driver.execute_script("""
                 const socialLinks = {};
+                
+                // Extended list of social media domains for better coverage
                 const socialDomains = {
-                    'facebook.com': 'facebook', 'fb.com': 'facebook', 'instagram.com': 'instagram',
-                    'twitter.com': 'twitter', 'x.com': 'twitter', 'linkedin.com': 'linkedin',
-                    'youtube.com': 'youtube', 'pinterest.com': 'pinterest', 'tiktok.com': 'tiktok',
-                    'yelp.com': 'yelp', 'tripadvisor.com': 'tripadvisor' // Add others if needed
+                    'facebook.com': 'facebook', 
+                    'fb.com': 'facebook', 
+                    'fb.me': 'facebook',
+                    'instagram.com': 'instagram',
+                    'twitter.com': 'twitter', 
+                    'x.com': 'twitter',
+                    't.co': 'twitter',
+                    'linkedin.com': 'linkedin',
+                    'youtube.com': 'youtube',
+                    'youtu.be': 'youtube',
+                    'pinterest.com': 'pinterest',
+                    'pin.it': 'pinterest',
+                    'tiktok.com': 'tiktok',
+                    'yelp.com': 'yelp',
+                    'tripadvisor.com': 'tripadvisor',
+                    'tripadvisor.co': 'tripadvisor',
+                    'snapchat.com': 'snapchat',
+                    'whatsapp.com': 'whatsapp',
+                    'tumblr.com': 'tumblr',
+                    'reddit.com': 'reddit',
+                    'telegram.org': 'telegram',
+                    't.me': 'telegram',
+                    'threads.net': 'threads',
+                    'medium.com': 'medium',
+                    'vimeo.com': 'vimeo'
                 };
-                // Select all links on the page
-                document.querySelectorAll('a[href]').forEach(link => {
-                    const href = link.href;
-                    if (!href || href.startsWith('mailto:') || href.startsWith('tel:')) return; // Skip mailto/tel
-
-                    try {
-                        const url = new URL(href);
-                        const domain = url.hostname.replace(/^www\\./, ''); // Remove www.
-
-                        for (const [socialDomain, network] of Object.entries(socialDomains)) {
-                            if (domain.includes(socialDomain)) {
-                                // Avoid login/share/intent links and very short paths (likely not profiles)
-                                if (!href.includes('/sharer') && !href.includes('/intent') && !href.includes('login') && !href.includes('signup') && url.pathname.length > 3) {
-                                     // Prioritize if not already found, or if current link seems more like a profile page
-                                     if (!socialLinks[network] || (url.pathname.length > (socialLinks[network] ? new URL(socialLinks[network]).pathname.length : 0))) {
-                                          socialLinks[network] = href;
-                                     }
+                
+                // Try multiple strategies to find social links
+                
+                // Strategy 1: Look for all links in the document
+                const extractFromAllLinks = () => {
+                    document.querySelectorAll('a[href]').forEach(link => {
+                        const href = link.href;
+                        if (!href || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+    
+                        try {
+                            const url = new URL(href);
+                            const domain = url.hostname.replace(/^www\\./, '');
+    
+                            for (const [socialDomain, network] of Object.entries(socialDomains)) {
+                                if (domain.includes(socialDomain)) {
+                                    // Skip login/share/intent links
+                                    if (href.includes('/sharer') || href.includes('/intent') || 
+                                        href.includes('login') || href.includes('signup')) {
+                                        continue;
+                                    }
+                                    
+                                    // Prioritize profile-like links with longer paths
+                                    if (!socialLinks[network] || 
+                                        url.pathname.length > new URL(socialLinks[network]).pathname.length) {
+                                        socialLinks[network] = href;
+                                    }
                                 }
                             }
-                        }
-                    } catch (e) { /* Ignore invalid URLs */ }
-                });
+                        } catch (e) { /* Ignore invalid URLs */ }
+                    });
+                };
+                
+                // Strategy 2: Look for links in business info area
+                const extractFromBusinessInfo = () => {
+                    const infoContainers = [
+                        'div.rogA2c', 
+                        'div.LBgpqf', 
+                        'div[role="complementary"]'
+                    ];
+                    
+                    for (const container of infoContainers) {
+                        const containerEl = document.querySelector(container);
+                        if (!containerEl) continue;
+                        
+                        containerEl.querySelectorAll('a[href]').forEach(link => {
+                            const href = link.href;
+                            if (!href || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+                            
+                            try {
+                                const url = new URL(href);
+                                const domain = url.hostname.replace(/^www\\./, '');
+                                
+                                for (const [socialDomain, network] of Object.entries(socialDomains)) {
+                                    if (domain.includes(socialDomain)) {
+                                        // Skip problematic URLs
+                                        if (href.includes('/sharer') || href.includes('/intent') || 
+                                            href.includes('login') || href.includes('signup')) {
+                                            continue;
+                                        }
+                                        
+                                        // Store the social link
+                                        socialLinks[network] = href;
+                                    }
+                                }
+                            } catch (e) { /* Ignore invalid URLs */ }
+                        });
+                    }
+                };
+                
+                // Strategy 3: Look for social media icons
+                const extractFromIcons = () => {
+                    const iconSelectors = [
+                        'img[src*="facebook"], img[alt*="Facebook"]',
+                        'img[src*="instagram"], img[alt*="Instagram"]',
+                        'img[src*="twitter"], img[alt*="Twitter"], img[alt*="X"]',
+                        'img[src*="linkedin"], img[alt*="LinkedIn"]',
+                        'img[src*="youtube"], img[alt*="YouTube"]',
+                        'img[src*="pinterest"], img[alt*="Pinterest"]',
+                        'img[src*="tiktok"], img[alt*="TikTok"]'
+                    ];
+                    
+                    for (const selector of iconSelectors) {
+                        document.querySelectorAll(selector).forEach(img => {
+                            // Find parent link
+                            let parent = img.parentElement;
+                            while (parent && parent.tagName !== 'A' && parent !== document.body) {
+                                parent = parent.parentElement;
+                            }
+                            
+                            if (parent && parent.tagName === 'A' && parent.href) {
+                                try {
+                                    const href = parent.href;
+                                    const url = new URL(href);
+                                    const domain = url.hostname.replace(/^www\\./, '');
+                                    
+                                    for (const [socialDomain, network] of Object.entries(socialDomains)) {
+                                        if (domain.includes(socialDomain)) {
+                                            socialLinks[network] = href;
+                                        }
+                                    }
+                                } catch (e) { /* Ignore invalid URLs */ }
+                            }
+                        });
+                    }
+                };
+                
+                // Execute all strategies
+                extractFromBusinessInfo();  // Start with most likely area
+                extractFromIcons();         // Then look for icons
+                extractFromAllLinks();      // Finally check all links
+                
+                // Cleanup for returned links
+                for (const network in socialLinks) {
+                    // Ensure URLs are clean - remove tracking parameters
+                    try {
+                        const url = new URL(socialLinks[network]);
+                        // Remove common tracking parameters
+                        ['utm_source', 'utm_medium', 'utm_campaign', 'fbclid', 'gclid'].forEach(param => {
+                            url.searchParams.delete(param);
+                        });
+                        socialLinks[network] = url.toString();
+                    } catch (e) { /* Keep original if cleaning fails */ }
+                }
+                
                 return socialLinks;
             """)
-            if social_links: self.logger.debug(f"Found social links: {social_links}")
+            
+            if social_links: 
+                self.logger.debug(f"Found social links: {social_links}")
             return social_links if social_links else {}
         except Exception as e:
             self.logger.warning(f"Error extracting social media links via JS: {e}")
-            return {}
+            
+            # Fallback: Try Selenium approach if JS fails
+            try:
+                social_networks = {
+                    'facebook': ['facebook.com', 'fb.com', 'fb.me'],
+                    'instagram': ['instagram.com'],
+                    'twitter': ['twitter.com', 'x.com', 't.co'],
+                    'linkedin': ['linkedin.com'],
+                    'youtube': ['youtube.com', 'youtu.be'],
+                    'pinterest': ['pinterest.com', 'pin.it'],
+                    'tiktok': ['tiktok.com']
+                }
+                
+                selenium_social_links = {}
+                
+                # Get all links on the page
+                links = driver.find_elements(By.TAG_NAME, 'a')
+                for link in links:
+                    try:
+                        href = link.get_attribute('href')
+                        if not href or href.startswith('mailto:') or href.startswith('tel:'):
+                            continue
+                            
+                        # Check each social network domain
+                        for network, domains in social_networks.items():
+                            if any(domain in href for domain in domains):
+                                # Skip login/share links
+                                if any(x in href for x in ['/sharer', '/intent', 'login', 'signup']):
+                                    continue
+                                    
+                                # Add or update the social link
+                                if network not in selenium_social_links or len(selenium_social_links[network]) < len(href):
+                                    selenium_social_links[network] = href
+                    except Exception:
+                        continue
+                
+                if selenium_social_links:
+                    self.logger.debug(f"Found social links via Selenium fallback: {selenium_social_links}")
+                return selenium_social_links
+            except Exception as selenium_err:
+                self.logger.warning(f"Selenium fallback for social links failed: {selenium_err}")
+                return {}
 
 
     def _extract_email_from_site(self, website_url, driver):
-        """Internal method to extract email using a provided driver instance."""
-        # This assumes the driver is ready and obtained from the pool by the caller
+        """Extract email using advanced techniques and heuristics from a website"""
         self.logger.info(f"Attempting email extraction from: {website_url}")
         try:
             # Set a reasonable page load timeout for the website
             driver.set_page_load_timeout(self.config["email_timeout"])
-            driver.get(website_url)
-            # No explicit sleep needed here, JS execution will wait for document ready state implicitly
-
-            # Execute JS to find emails (improved regex and filtering)
-            # Look in text, source, and mailto links
+            
+            # Try to load the website
+            try:
+                driver.get(website_url)
+                
+                # Add random delay to appear more human-like
+                wait_time = random.uniform(2.0, 4.0) if self.config.get("randomize_delays", True) else 3.0
+                time.sleep(wait_time)
+                
+            except TimeoutException:
+                self.logger.warning(f"Timeout loading website: {website_url}")
+                # Try to continue extraction even if page didn't fully load
+            
+            # Execute JS to find emails with improved regex and filtering
             emails = driver.execute_script("""
+                // Comprehensive email regex
                 const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g;
-                const pageText = document.body.innerText || '';
-                const pageHTML = document.documentElement.outerHTML || ''; // Use outerHTML for full source
+                
+                // Get text content and HTML
+                const pageText = document.body?.innerText || '';
+                const pageHTML = document.documentElement?.outerHTML || '';
                 let foundEmails = new Set();
 
-                // Find in visible text and source HTML
+                // Strategy 1: Find emails in visible text
                 (pageText.match(emailRegex) || []).forEach(e => foundEmails.add(e.toLowerCase()));
+                
+                // Strategy 2: Find emails in source HTML (might catch obfuscated ones)
                 (pageHTML.match(emailRegex) || []).forEach(e => foundEmails.add(e.toLowerCase()));
 
-                // Find in mailto links more robustly
+                // Strategy 3: Find emails in mailto links
                 document.querySelectorAll('a[href^="mailto:"]').forEach(link => {
                     try {
-                        // Extract email after "mailto:", handle potential parameters
                         const mailtoHref = link.getAttribute('href');
                         const emailPart = mailtoHref.substring(7).split('?')[0];
                         if (emailPart && emailPart.includes('@')) {
-                             foundEmails.add(emailPart.toLowerCase());
+                            foundEmails.add(emailPart.toLowerCase());
                         }
                     } catch(e){}
                 });
+                
+                // Strategy 4: Look for obfuscated emails with entities or script
+                try {
+                    // Look for elements with data attributes related to email
+                    document.querySelectorAll('[data-email], [data-mail]').forEach(el => {
+                        const emailData = el.getAttribute('data-email') || el.getAttribute('data-mail');
+                        if (emailData && emailData.includes('@')) {
+                            foundEmails.add(emailData.toLowerCase());
+                        }
+                    });
+                    
+                    // Check for contact forms that might have hidden email field
+                    document.querySelectorAll('form[action*="contact"], form[id*="contact"], form[class*="contact"]').forEach(form => {
+                        const hiddenFields = form.querySelectorAll('input[type="hidden"]');
+                        hiddenFields.forEach(field => {
+                            const value = field.value;
+                            if (value && value.includes('@') && value.includes('.')) {
+                                const matches = value.match(emailRegex);
+                                if (matches) {
+                                    matches.forEach(m => foundEmails.add(m.toLowerCase()));
+                                }
+                            }
+                        });
+                    });
+                } catch(e) {}
 
                 // Filter out common invalid/placeholder emails and image/font/css extensions
-                const invalidPatterns = /example|placeholder|yourdomain|domain\\.com|sentry|wixpress|\\.(png|jpg|jpeg|gif|webp|svg|woff|woff2|ttf|css)$/i;
+                const invalidPatterns = /example|placeholder|yourdomain|domain\\.com|sentry|wixpress|info@info|site@site|support@support|gmail@gmail|\\.(png|jpg|jpeg|gif|webp|svg|woff|woff2|ttf|css|js)$/i;
                 const validEmails = Array.from(foundEmails).filter(email =>
-                    !invalidPatterns.test(email) && email.includes('.') && email.length < 80 // Basic TLD check and length limit
+                    !invalidPatterns.test(email) && 
+                    email.includes('.') && 
+                    email.length < 80 && // Basic length sanity check
+                    email.split('@')[0].length >= 2 && // Local part must be at least 2 chars
+                    email.split('@')[1].length >= 4    // Domain part must be at least 4 chars (a.bc)
                 );
 
-                // Prioritize common emails (e.g., info@, contact@)
-                const priorityPrefixes = ['info@', 'contact@', 'support@', 'sales@', 'hello@', 'office@', 'admin@', 'mail@', 'booking@', 'reservations@'];
+                // Prioritize common business emails
+                const priorityPrefixes = [
+                    'info@', 'contact@', 'hello@', 'support@', 'sales@', 'office@', 
+                    'admin@', 'mail@', 'help@', 'booking@', 'reservations@', 'enquiry@', 'enquiries@'
+                ];
+                
                 let primaryEmail = '';
-                for (const prefix of priorityPrefixes) {
-                    primaryEmail = validEmails.find(e => e.startsWith(prefix));
-                    if (primaryEmail) break;
+                
+                // First check domains matching the website
+                try {
+                    const currentDomain = window.location.hostname.replace('www.', '');
+                    const domainEmails = validEmails.filter(email => email.split('@')[1].includes(currentDomain));
+                    
+                    if (domainEmails.length > 0) {
+                        // Prioritize emails with domain matching the site
+                        for (const prefix of priorityPrefixes) {
+                            primaryEmail = domainEmails.find(e => e.startsWith(prefix));
+                            if (primaryEmail) break;
+                        }
+                        
+                        // If no priority match, take the first domain match
+                        if (!primaryEmail) {
+                            primaryEmail = domainEmails[0];
+                        }
+                    }
+                } catch(e) {}
+                
+                // If no matching domain email, try priority prefixes
+                if (!primaryEmail) {
+                    for (const prefix of priorityPrefixes) {
+                        primaryEmail = validEmails.find(e => e.startsWith(prefix));
+                        if (primaryEmail) break;
+                    }
                 }
 
-                // If no priority email, return the first valid one found
+                // If still no primary email, return the first valid one
                 return primaryEmail || (validEmails.length > 0 ? validEmails[0] : '');
             """)
 
             if emails:
                 self.logger.info(f"Found email on {website_url}: {emails}")
                 return emails
-            else:
-                self.logger.info(f"No valid email found on {website_url}")
-                return ""
+            
+            # If JS approach didn't find email, try checking "Contact" page
+            if not emails and self.config.get("deep_email_search", False):
+                try:
+                    # Find contact page link
+                    contact_links = driver.find_elements(By.XPATH, "//a[contains(translate(text(), 'CONTACT', 'contact'), 'contact') or contains(@href, 'contact')]")
+                    
+                    if contact_links:
+                        for link in contact_links[:2]:  # Try up to 2 contact links
+                            try:
+                                contact_url = link.get_attribute('href')
+                                if contact_url and contact_url.startswith('http'):
+                                    self.logger.debug(f"Checking contact page: {contact_url}")
+                                    driver.get(contact_url)
+                                    time.sleep(2)  # Wait for page to load
+                                    
+                                    # Try to extract email from contact page
+                                    contact_email = driver.execute_script("""
+                                        const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/g;
+                                        const pageText = document.body.innerText || '';
+                                        const pageHTML = document.documentElement.outerHTML || '';
+                                        let foundEmails = new Set();
+                                        
+                                        // Check visible text
+                                        (pageText.match(emailRegex) || []).forEach(e => foundEmails.add(e.toLowerCase()));
+                                        
+                                        // Check HTML
+                                        (pageHTML.match(emailRegex) || []).forEach(e => foundEmails.add(e.toLowerCase()));
+                                        
+                                        // Check mailto links (often on contact pages)
+                                        document.querySelectorAll('a[href^="mailto:"]').forEach(link => {
+                                            const mailtoHref = link.getAttribute('href');
+                                            const emailPart = mailtoHref.substring(7).split('?')[0];
+                                            if (emailPart && emailPart.includes('@')) {
+                                                foundEmails.add(emailPart.toLowerCase());
+                                            }
+                                        });
+                                        
+                                        // Filter and prioritize
+                                        const invalidPatterns = /example|placeholder|yourdomain|domain\\.com|sentry|wixpress|\\.(png|jpg|jpeg|gif|webp|svg|woff|woff2|ttf|css)$/i;
+                                        const validEmails = Array.from(foundEmails).filter(email =>
+                                            !invalidPatterns.test(email) && email.includes('.') && email.length < 80
+                                        );
+                                        
+                                        // Prioritize domain-matching emails
+                                        try {
+                                            const currentDomain = window.location.hostname.replace('www.', '');
+                                            const domainEmail = validEmails.find(email => email.split('@')[1].includes(currentDomain));
+                                            if (domainEmail) return domainEmail;
+                                        } catch(e) {}
+                                        
+                                        // Return first valid email or empty string
+                                        return validEmails.length > 0 ? validEmails[0] : '';
+                                    """)
+                                    
+                                    if contact_email:
+                                        self.logger.info(f"Found email on contact page: {contact_email}")
+                                        return contact_email
+                            except Exception as contact_err:
+                                self.logger.debug(f"Error checking contact page: {contact_err}")
+                except Exception as deep_search_err:
+                    self.logger.debug(f"Error during deep email search: {deep_search_err}")
+            
+            self.logger.info(f"No valid email found on {website_url}")
+            return ""
 
         except TimeoutException:
             self.logger.warning(f"Timeout loading website for email extraction: {website_url}")
@@ -2072,7 +3496,6 @@ class GoogleMapsGridScraper:
 
                 # Use tqdm for progress bar
                 with tqdm(total=total_cells, desc="Processing Grid Cells", unit="cell", smoothing=0.1) as progress_bar:
-                                        # ... (inside the scrape method's ThreadPoolExecutor loop) ...
                     for cell in tasks_to_submit:
                         # Check BEFORE submitting if max_results is reached
                         with self.lock: current_results_count = len(self.results)
@@ -2085,16 +3508,10 @@ class GoogleMapsGridScraper:
                             # break # Use this if you want to hard stop immediately
 
                         if not stop_submission:
-                             # *** Corrected Indentation Here ***
                              futures.append(executor.submit(self.process_grid_cell, query, cell))
                         else:
                             # If stopping submission, update progress bar for skipped cells
                             progress_bar.update(1)
-
-
-                    # Process completed futures
-                    # ... (rest of the scrape method) ...
-
 
 
                     # Process completed futures
@@ -2119,12 +3536,6 @@ class GoogleMapsGridScraper:
                         # Update visualization periodically
                         if processed_cells_count % 20 == 0 or processed_cells_count == total_cells:
                              self.update_grid_visualization()
-
-                        # Check max_results again after processing (redundant if checked before submit, but safe)
-                        # with self.lock: current_results_count = len(self.results)
-                        # if max_results and current_results_count >= max_results:
-                        #      # Cancellation logic here if needed, but stopping submission is usually enough
-                        #      pass
 
             # --- End of parallel processing ---
             self.logger.info("All submitted tasks completed.")
@@ -2169,52 +3580,9 @@ class GoogleMapsGridScraper:
 
 
     def process_grid_cell(self, query, grid_cell):
-        """Search, extract links, and process businesses for a single grid cell. Returns the processed cell."""
-        cell_id = grid_cell["cell_id"]
-        thread_id = threading.get_ident()
-        processed_count_in_cell = 0
-        max_results_limit = self.config.get("max_results") # Get limit
+        """Search, extract links, and process businesses for a single grid cell. Returns"""
 
-        self.logger.debug(f"Thread {thread_id} starting processing for cell {cell_id}")
-
-        try:
-            # --- Step 1: Search and get links ---
-            # search_in_grid_cell handles browser acquisition/release for the search phase
-            # It also updates cell processed status and empty status
-            business_links = self.search_in_grid_cell(query, grid_cell)
-
-            if not business_links:
-                self.logger.debug(f"Thread {thread_id} - No links found in cell {cell_id}. Returning.")
-                return grid_cell # Return the cell state updated by search_in_grid_cell
-
-            self.logger.info(f"Thread {thread_id} - Found {len(business_links)} links in {cell_id}. Processing details...")
-
-            # --- Step 2: Process links to get details ---
-            # Acquire a browser specifically for processing these links
-            detail_browser_id = None
-            try:
-                detail_browser_id = self.browser_pool.get_browser()
-                detail_driver = self.browser_pool.get_driver(detail_browser_id)
-                if not detail_driver:
-                    raise Exception(f"Failed to get driver for detail extraction in cell {cell_id}")
-
-                for i, link in enumerate(business_links):
-                    # Check max results limit BEFORE processing each link
-                    with self.lock: current_results_count = len(self.results)
-                    if max_results_limit and current_results_count >= max_results_limit:
-                        self.logger.info(f"Thread {thread_id} - Max results reached ({max_results_limit}) while processing links in cell {cell_id}. Stopping link processing.")
-                        break # Stop processing more links in this cell
-
-                    self.logger.debug(f"Thread {thread_id} - Cell {cell_id}: Processing link {i+1}/{len(business_links)}")
-                    place_info = self.extract_place_info(link, detail_driver) # Use the dedicated detail driver
-
-                    if place_info:
-                        # Add grid cell info before saving
-                        place_info["grid_cell"] = cell_id
-                        # Add result to the shared list using the lock
-                        with self.lock:
-                            business_key = (place_info["name"], place_info.get("address", ""))
-                            # Check duplicate again just before adding
+        # Check duplicate again just before adding
                             if business_key not in self.seen_businesses:
                                 self.results.append(place_info)
                                 self.seen_businesses[business_key] = len(self.results) - 1
@@ -2494,7 +3862,7 @@ class GoogleMapsGridScraper:
 
 
     def save_to_csv(self, filename, data):
-        """Save results data to CSV file"""
+        """Save results data to CSV file with comprehensive field handling"""
         if not data: return
         try:
             filepath = Path(filename)
@@ -2503,19 +3871,36 @@ class GoogleMapsGridScraper:
             # Dynamically determine headers based on all keys present in the data
             all_keys = set()
             social_keys = set()
+            feature_keys = set()
+            
             for row in data:
-                 all_keys.update(row.keys())
+                 all_keys.update(k for k in row.keys() if k not in ['social_links', 'reviews', 'features'])
                  if isinstance(row.get("social_links"), dict):
                      social_keys.update(f"social_{net}" for net in row["social_links"])
+                 if isinstance(row.get("features"), list):
+                     feature_keys.add("features")
 
+            # Define preferred order of columns
             preferred_order = [
-                "name", "category", "address", "coordinates", "phone", # Removed 'location' as it's less common
+                "name", "category", "address", "coordinates", "phone", 
                 "email", "website", "maps_url", "rating", "reviews_count",
-                "hours", "price_level", "place_id", "grid_cell", "scrape_timestamp" # Changed from scrape_date
+                "price_level", "opening_hours", "place_id", "grid_cell", "scrape_timestamp"
             ]
 
+            # Arrange fields in proper order
             fieldnames = [f for f in preferred_order if f in all_keys]
-            remaining_keys = sorted(list((all_keys - set(preferred_order) - {'social_links'}) | social_keys))
+            remaining_keys = sorted(list(all_keys - set(preferred_order)))
+            
+            # Add feature fields if present
+            if feature_keys:
+                remaining_keys.append("features")
+                
+            # Add social media fields
+            if social_keys:
+                social_fields = sorted(list(social_keys))
+                remaining_keys.extend(social_fields)
+                
+            # Combine all fields
             fieldnames.extend(remaining_keys)
 
             with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
@@ -2523,75 +3908,139 @@ class GoogleMapsGridScraper:
                 writer.writeheader()
                 for result in data:
                     row_data = result.copy()
+                    
+                    # Handle special fields
+                    
                     # Flatten social links
                     if isinstance(row_data.get("social_links"), dict):
                         for network, url in row_data["social_links"].items():
                             row_data[f"social_{network}"] = url
-                    if "social_links" in row_data: del row_data["social_links"] # Remove original dict
+                    if "social_links" in row_data: 
+                        del row_data["social_links"]
+                        
+                    # Convert features list to string
+                    if isinstance(row_data.get("features"), list):
+                        row_data["features"] = "; ".join(row_data["features"])
+                    
+                    # Don't include full review content in CSV - just count them
+                    if "reviews" in row_data:
+                        row_data["review_count"] = len(row_data["reviews"]) if isinstance(row_data["reviews"], list) else 0
+                        del row_data["reviews"]
+                    
                     writer.writerow(row_data)
-            # self.logger.debug(f"CSV saved to {filepath}")
+            
+            self.logger.debug(f"CSV saved to {filepath}")
         except Exception as e:
             self.logger.error(f"Error saving CSV to {filename}: {e}", exc_info=True)
 
 
     def save_to_json(self, filename, data):
-        """Save results data to JSON file"""
+        """Save results data to JSON file with pretty formatting"""
         if not data: return
         try:
             filepath = Path(filename)
             filepath.parent.mkdir(parents=True, exist_ok=True)
             with open(filepath, 'w', encoding='utf-8') as jsonfile:
                 json.dump(data, jsonfile, indent=2, ensure_ascii=False) # Use indent=2 for readability
-            # self.logger.debug(f"JSON saved to {filepath}")
+            self.logger.debug(f"JSON saved to {filepath}")
         except Exception as e:
             self.logger.error(f"Error saving JSON to {filename}: {e}", exc_info=True)
 
 
     def save_to_excel(self, filename, data):
-        """Save results data to Excel file using Pandas"""
+        """Save results data to Excel file with advanced formatting"""
         if not data or not PANDAS_AVAILABLE: return
         try:
             filepath = Path(filename)
             filepath.parent.mkdir(parents=True, exist_ok=True)
 
-            # Prepare data for DataFrame, handling social links
+            # Prepare data for DataFrame, handling complex fields
             df_data = []
             all_social_networks = set()
+            
             for result in data:
                  row = result.copy()
+                 
+                 # Handle social links (flatten)
                  socials = row.pop("social_links", {})
                  if isinstance(socials, dict):
                      for network, url in socials.items():
                          col_name = f"social_{network}"
                          row[col_name] = url
                          all_social_networks.add(col_name)
+                 
+                 # Convert features list to string
+                 if isinstance(row.get("features"), list):
+                     row["features"] = "; ".join(row["features"])
+                 
+                 # Convert reviews to count and sample
+                 if "reviews" in row:
+                     reviews = row.pop("reviews", [])
+                     row["review_count"] = len(reviews) if isinstance(reviews, list) else 0
+                     if isinstance(reviews, list) and reviews:
+                         # Store first review as sample
+                         row["review_sample"] = reviews[0][:200] + "..." if len(reviews[0]) > 200 else reviews[0]
+                 
                  df_data.append(row)
 
+            # Create DataFrame
             df = pd.DataFrame(df_data)
 
             # Define column order
             preferred_order = [
                 "name", "category", "address", "coordinates", "phone",
                 "email", "website", "maps_url", "rating", "reviews_count",
-                "hours", "price_level", "place_id", "grid_cell", "scrape_timestamp"
+                "review_count", "review_sample", "price_level", "opening_hours", 
+                "features", "place_id", "grid_cell", "scrape_timestamp"
             ]
             social_cols = sorted(list(all_social_networks))
+            
+            # Create final column order
             final_order = [col for col in preferred_order if col in df.columns]
-            other_cols = sorted([col for col in df.columns if col not in preferred_order and col not in social_cols])
             final_order.extend(social_cols)
+            other_cols = sorted([col for col in df.columns if col not in final_order and col not in social_cols])
             final_order.extend(other_cols)
 
-            # Reorder DataFrame columns
-            df = df[final_order]
+            # Reorder DataFrame columns (keeping only those that exist)
+            existing_cols = [col for col in final_order if col in df.columns]
+            df = df[existing_cols]
 
-            df.to_excel(filepath, index=False, engine='openpyxl') # Specify engine if needed
+            # Create a styled Excel file with formatting
+            with pd.ExcelWriter(filepath, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False, sheet_name='Businesses')
+                
+                # Get the workbook and worksheet
+                workbook = writer.book
+                worksheet = writer.sheets['Businesses']
+                
+                # Apply formatting
+                # Freeze the header row
+                worksheet.freeze_panes = 'A2'
+                
+                # Auto-adjust column widths
+                for column in worksheet.columns:
+                    max_length = 0
+                    column_letter = column[0].column_letter
+                    for cell in column:
+                        try:
+                            if cell.value:
+                                cell_length = len(str(cell.value))
+                                if cell_length > max_length:
+                                    max_length = cell_length
+                        except:
+                            pass
+                    # Set width with some padding
+                    adjusted_width = max(max_length + 2, 10)
+                    # Cap width to prevent extremely wide columns
+                    worksheet.column_dimensions[column_letter].width = min(adjusted_width, 50)
+            
             self.logger.info(f"Saved Excel version to {filepath}")
         except Exception as e:
             self.logger.error(f"Error saving Excel to {filename}: {e}", exc_info=True)
 
 
     def generate_statistics_report(self):
-        """Generate a report with statistics about the scraped data"""
+        """Generate a comprehensive report with statistics about the scraped data"""
         with self.lock: # Access results safely
              if not self.results:
                  self.logger.warning("No results to generate statistics report")
@@ -2604,46 +4053,101 @@ class GoogleMapsGridScraper:
             report["unique_businesses"] = len(set((r.get("name", ""), r.get("address", "")) for r in results_copy if r.get("name")))
             report["categories"] = Counter()
             report["businesses_by_grid_cell"] = Counter()
-
+            report["price_levels"] = Counter()
+            report["features"] = Counter()
+            
+            # For numerical analysis
             ratings = []
             reviews = []
+            email_domains = Counter()
+            websites_by_tld = Counter()
 
             for result in results_copy:
+                # Count basic fields
                 if result.get("category"): report["categories"][result["category"]] += 1
-                if result.get("email"): report["with_email"] += 1
-                if result.get("website"): report["with_website"] += 1
+                if result.get("email"): 
+                    report["with_email"] += 1
+                    # Extract email domain
+                    if '@' in result["email"]:
+                        domain = result["email"].split('@')[-1].lower()
+                        email_domains[domain] += 1
+                if result.get("website"): 
+                    report["with_website"] += 1
+                    # Extract TLD
+                    try:
+                        parsed = urlparse(result["website"])
+                        if parsed.netloc:
+                            tld = parsed.netloc.split('.')[-1].lower()
+                            websites_by_tld[tld] += 1
+                    except:
+                        pass
                 if result.get("phone"): report["with_phone"] += 1
                 if result.get("grid_cell"): report["businesses_by_grid_cell"][result["grid_cell"]] += 1
-
+                if result.get("opening_hours"): report["with_hours"] += 1
+                if result.get("price_level"): report["price_levels"][result["price_level"]] += 1
+                
+                # Track features
+                if isinstance(result.get("features"), list):
+                    for feature in result["features"]:
+                        report["features"][feature] += 1
+                
+                # Social networks
+                if isinstance(result.get("social_links"), dict):
+                    for network in result["social_links"]:
+                        report[f"with_social_{network}"] += 1
+                
+                # Numerical data for statistics
                 if result.get("rating"):
-                    try: ratings.append(float(str(result["rating"]).replace(',', '.'))) # Handle comma decimal separator
-                    except (ValueError, TypeError): pass
+                    try: 
+                        ratings.append(float(str(result["rating"]).replace(',', '.')))
+                    except (ValueError, TypeError): 
+                        pass
                 if result.get("reviews_count"):
-                    try: reviews.append(int(str(result["reviews_count"]).replace(',', '').replace(' ', '')))
-                    except (ValueError, TypeError): pass
+                    try: 
+                        reviews.append(int(str(result["reviews_count"]).replace(',', '').replace(' ', '')))
+                    except (ValueError, TypeError): 
+                        pass
 
+            # Calculate statistics for numerical fields
             report["with_rating"] = len(ratings)
-            report["avg_rating"] = round(statistics.mean(ratings), 2) if ratings else 0
-            report["median_rating"] = round(statistics.median(ratings), 1) if ratings else 0
+            if ratings:
+                report["avg_rating"] = round(statistics.mean(ratings), 2)
+                report["median_rating"] = round(statistics.median(ratings), 1)
+                report["min_rating"] = min(ratings)
+                report["max_rating"] = max(ratings)
+            
             report["total_reviews"] = sum(reviews)
-            report["avg_reviews"] = round(statistics.mean(reviews), 1) if reviews else 0
-            report["median_reviews"] = int(statistics.median(reviews)) if reviews else 0
+            if reviews:
+                report["avg_reviews"] = round(statistics.mean(reviews), 1)
+                report["median_reviews"] = int(statistics.median(reviews))
+                report["min_reviews"] = min(reviews)
+                report["max_reviews"] = max(reviews)
 
-            # Top categories
-            top_categories = {cat: count for cat, count in report["categories"].most_common(15)}
-            report["top_categories"] = top_categories
+            # Top categories and features (limited to top 20)
+            report["top_categories"] = {cat: count for cat, count in report["categories"].most_common(20)}
+            report["top_features"] = {feature: count for feature, count in report["features"].most_common(20)}
+            report["top_email_domains"] = {domain: count for domain, count in email_domains.most_common(10)}
+            report["top_website_tlds"] = {tld: count for tld, count in websites_by_tld.most_common(10)}
 
-            # Percentages
+            # Calculate percentages
             total = report["total_businesses"]
             if total > 0:
                  report["email_percentage"] = round((report["with_email"] / total) * 100, 1)
                  report["website_percentage"] = round((report["with_website"] / total) * 100, 1)
                  report["phone_percentage"] = round((report["with_phone"] / total) * 100, 1)
                  report["rating_percentage"] = round((report["with_rating"] / total) * 100, 1)
+                 report["hours_percentage"] = round((report["with_hours"] / total) * 100, 1)
+                 # Calculate social media percentages
+                 for key in list(report.keys()):
+                     if key.startswith("with_social_"):
+                         network = key.replace("with_social_", "")
+                         report[f"{network}_percentage"] = round((report[key] / total) * 100, 1)
 
+            # Add scraping duration
             if self.stats["start_time"]:
                 elapsed_seconds = (datetime.now() - self.stats["start_time"]).total_seconds()
                 report["scrape_duration_minutes"] = round(elapsed_seconds / 60, 2)
+                report["scrape_duration_formatted"] = self.get_elapsed_time()
 
             # Add scraping stats
             report["scrape_stats"] = {
@@ -2653,7 +4157,8 @@ class GoogleMapsGridScraper:
                  "consent_pages_handled": self.stats["consent_pages_handled"],
                  "extraction_errors": self.stats["extraction_errors"],
                  "rate_limit_hits": self.stats["rate_limit_hits"],
-                 "session_id": self.session_id
+                 "session_id": self.session_id,
+                 "businesses_per_hour": round((total / max(elapsed_seconds, 1)) * 3600, 1) if self.stats["start_time"] else 0
             }
 
             # Save JSON report
@@ -2662,8 +4167,11 @@ class GoogleMapsGridScraper:
                 json.dump(report, f, indent=2, default=str) # Use default=str for Counter objects
             self.logger.info(f"Statistics report saved to {report_filename}")
 
+            # Generate HTML report with visualizations
             if MATPLOTLIB_AVAILABLE and not self.no_images:
-                self.generate_html_report(report) # Generate HTML if possible
+                self.generate_html_report(report)
+            else:
+                self.generate_simple_html_report(report)
 
             return report
         except Exception as e:
@@ -2672,67 +4180,144 @@ class GoogleMapsGridScraper:
 
 
     def generate_html_report(self, stats):
-        """Generate HTML report with visualizations"""
+        """Generate HTML report with visualizations using Matplotlib"""
         try:
+            # Initialize chart paths
             category_chart_path = None
             info_chart_path = None
+            rating_chart_path = None
+            feature_chart_path = None
 
-            # Create category chart
-            if stats.get("top_categories"):
+            # --- Generate charts ---
+            if MATPLOTLIB_AVAILABLE and not self.no_images:
+                # 1. Create category chart
+                if stats.get("top_categories"):
+                    try:
+                        fig, ax = plt.subplots(figsize=(12, 7))
+                        categories = list(stats["top_categories"].keys())
+                        counts = list(stats["top_categories"].values())
+                        
+                        # Limit to top 15 for readability
+                        if len(categories) > 15:
+                            categories = categories[:15]
+                            counts = counts[:15]
+                        
+                        # Create horizontal bar chart for better label readability
+                        y_pos = np.arange(len(categories))
+                        ax.barh(y_pos, counts, align='center', color='skyblue')
+                        ax.set_yticks(y_pos)
+                        ax.set_yticklabels(categories)
+                        ax.invert_yaxis()  # labels read top-to-bottom
+                        ax.set_xlabel('Number of Businesses')
+                        ax.set_title('Top Business Categories Found')
+                        
+                        # Add counts at the end of the bars
+                        for i, v in enumerate(counts):
+                            ax.text(v + 1, i, str(v), color='blue', va='center', fontweight='bold', fontsize=9)
+
+                        plt.tight_layout()
+                        category_chart_path_obj = self.reports_dir / f"category_chart_{self.session_id}.png"
+                        plt.savefig(category_chart_path_obj)
+                        category_chart_path = category_chart_path_obj.name # Use relative name for HTML
+                        plt.close(fig)
+                        self.logger.info(f"Category chart saved to {category_chart_path_obj}")
+                    except Exception as chart_err:
+                        self.logger.error(f"Failed to generate category chart: {chart_err}")
+
+                # 2. Create information availability chart (pie chart)
                 try:
-                    # ... inside generate_html_report method ...
-                         fig, ax = plt.subplots(figsize=(12, 7)) # Adjusted size
-                         categories = list(stats["top_categories"].keys())
-                         counts = list(stats["top_categories"].values())
-                         # Create horizontal bar chart for better label readability
-                         y_pos = np.arange(len(categories))
-                         ax.barh(y_pos, counts, align='center', color='skyblue')
-                         ax.set_yticks(y_pos, labels=categories) # Use labels= kwarg
-                         # ax.set_yticklabels(categories) # Deprecated way
-                         ax.invert_yaxis()  # labels read top-to-bottom
-                         ax.set_xlabel('Number of Businesses')
-                         ax.set_title('Top 15 Business Categories Found')
-                         # Add counts at the end of the bars
-                         for i, v in enumerate(counts):
-                             ax.text(v + 1, i, str(v), color='blue', va='center', fontweight='bold', fontsize=9)
+                    fig, ax = plt.subplots(figsize=(8, 5))
+                    info_labels = ['With Email', 'With Website', 'With Phone', 'With Rating', 'With Hours']
+                    info_counts = [
+                        stats.get("with_email", 0), 
+                        stats.get("with_website", 0),
+                        stats.get("with_phone", 0), 
+                        stats.get("with_rating", 0),
+                        stats.get("with_hours", 0)
+                    ]
+                    total_biz = stats.get("total_businesses", 1) # Avoid division by zero
+                    info_pcts = [(c / max(1,total_biz)) * 100 for c in info_counts] # Ensure total_biz >= 1
 
-                         plt.tight_layout()
-                         category_chart_path_obj = self.reports_dir / f"category_chart_{self.session_id}.png"
-                         plt.savefig(category_chart_path_obj)
-                         category_chart_path = category_chart_path_obj.name # Use relative name for HTML
-                         plt.close(fig)
-                         self.logger.info(f"Category chart saved to {category_chart_path_obj}")
+                    # Use a pie chart for percentages
+                    labels_pct = [f'{label}\n({pct:.1f}%)' for label, pct in zip(info_labels, info_pcts)]
+                    ax.pie(info_counts, labels=labels_pct, autopct='%1.1f%%', startangle=90, 
+                           colors=['#ff9999','#66b3ff','#99ff99','#ffcc99', '#c2c2f0'])
+                    ax.axis('equal') # Equal aspect ratio ensures that pie is drawn as a circle.
+                    plt.title('Percentage of Businesses with Key Information')
 
+                    plt.tight_layout()
+                    info_chart_path_obj = self.reports_dir / f"info_chart_{self.session_id}.png"
+                    plt.savefig(info_chart_path_obj)
+                    info_chart_path = info_chart_path_obj.name # Use relative name
+                    plt.close(fig)
+                    self.logger.info(f"Info chart saved to {info_chart_path_obj}")
                 except Exception as chart_err:
-                     self.logger.error(f"Failed to generate category chart: {chart_err}")
-
-
-            # Create information availability chart (pie chart)
-            try:
-                fig, ax = plt.subplots(figsize=(8, 5))
-                info_labels = ['With Email', 'With Website', 'With Phone', 'With Rating']
-                info_counts = [
-                    stats.get("with_email", 0), stats.get("with_website", 0),
-                    stats.get("with_phone", 0), stats.get("with_rating", 0)
-                ]
-                total_biz = stats.get("total_businesses", 1) # Avoid division by zero
-                info_pcts = [(c / max(1,total_biz)) * 100 for c in info_counts] # Ensure total_biz >= 1
-
-                # Use a pie chart for percentages
-                labels_pct = [f'{label}\n({pct:.1f}%)' for label, pct in zip(info_labels, info_pcts)]
-                ax.pie(info_counts, labels=labels_pct, autopct='%1.1f%%', startangle=90, colors=['#ff9999','#66b3ff','#99ff99','#ffcc99'])
-                ax.axis('equal') # Equal aspect ratio ensures that pie is drawn as a circle.
-                plt.title('Percentage of Businesses with Key Information')
-
-                plt.tight_layout()
-                info_chart_path_obj = self.reports_dir / f"info_chart_{self.session_id}.png"
-                plt.savefig(info_chart_path_obj)
-                info_chart_path = info_chart_path_obj.name # Use relative name
-                plt.close(fig)
-                self.logger.info(f"Info chart saved to {info_chart_path_obj}")
-            except Exception as chart_err:
-                self.logger.error(f"Failed to generate info chart: {chart_err}")
-
+                    self.logger.error(f"Failed to generate info chart: {chart_err}")
+                
+                # 3. Create rating distribution chart (histogram)
+                if stats.get("with_rating", 0) > 0:
+                    try:
+                        fig, ax = plt.subplots(figsize=(8, 5))
+                        # Extract ratings from results
+                        ratings = []
+                        for result in self.results:
+                            if result.get("rating"):
+                                try:
+                                    ratings.append(float(str(result["rating"]).replace(',', '.')))
+                                except (ValueError, TypeError):
+                                    pass
+                        
+                        if ratings:
+                            # Create histogram
+                            ax.hist(ratings, bins=10, color='lightgreen', edgecolor='black', alpha=0.7)
+                            ax.set_xlabel('Rating')
+                            ax.set_ylabel('Number of Businesses')
+                            ax.set_title('Distribution of Business Ratings')
+                            ax.grid(axis='y', alpha=0.75)
+                            
+                            # Add average rating line
+                            avg_rating = statistics.mean(ratings)
+                            ax.axvline(avg_rating, color='red', linestyle='dashed', linewidth=1)
+                            ax.text(avg_rating, ax.get_ylim()[1]*0.9, f'Avg: {avg_rating:.2f}', 
+                                    color='red', fontweight='bold')
+                            
+                            plt.tight_layout()
+                            rating_chart_path_obj = self.reports_dir / f"rating_chart_{self.session_id}.png"
+                            plt.savefig(rating_chart_path_obj)
+                            rating_chart_path = rating_chart_path_obj.name
+                            plt.close(fig)
+                            self.logger.info(f"Rating chart saved to {rating_chart_path_obj}")
+                    except Exception as chart_err:
+                        self.logger.error(f"Failed to generate rating chart: {chart_err}")
+                
+                # 4. Create features chart (top 10)
+                if stats.get("top_features"):
+                    try:
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        features = list(stats["top_features"].keys())[:10]  # Top 10 features
+                        counts = list(stats["top_features"].values())[:10]
+                        
+                        # Horizontal bar chart
+                        y_pos = np.arange(len(features))
+                        ax.barh(y_pos, counts, align='center', color='lightblue')
+                        ax.set_yticks(y_pos)
+                        ax.set_yticklabels(features)
+                        ax.invert_yaxis()
+                        ax.set_xlabel('Number of Businesses')
+                        ax.set_title('Top 10 Business Features/Attributes')
+                        
+                        # Add count labels
+                        for i, v in enumerate(counts):
+                            ax.text(v + 1, i, str(v), color='blue', va='center', fontsize=9)
+                        
+                        plt.tight_layout()
+                        feature_chart_path_obj = self.reports_dir / f"feature_chart_{self.session_id}.png"
+                        plt.savefig(feature_chart_path_obj)
+                        feature_chart_path = feature_chart_path_obj.name
+                        plt.close(fig)
+                        self.logger.info(f"Feature chart saved to {feature_chart_path_obj}")
+                    except Exception as chart_err:
+                        self.logger.error(f"Failed to generate feature chart: {chart_err}")
 
             # --- Generate HTML Report ---
             html_content = f"""
@@ -2760,6 +4345,8 @@ class GoogleMapsGridScraper:
                     table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
                     th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 0.9em; }}
                     th {{ background-color: #f2f2f2; font-weight: bold; }}
+                    .two-col {{ display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }}
+                    @media (max-width: 768px) {{ .two-col {{ grid-template-columns: 1fr; }} }}
                 </style>
             </head>
             <body>
@@ -2790,35 +4377,70 @@ class GoogleMapsGridScraper:
                              <div class="stat-card"><div class="stat-number">{stats.get("avg_reviews", 0):.1f}</div><div class="stat-label">Average Reviews</div></div>
                              <div class="stat-card"><div class="stat-number">{stats.get("median_reviews", 0):,}</div><div class="stat-label">Median Reviews</div></div>
                          </div>
+                         {f'<div class="chart"><img src="{rating_chart_path}" alt="Rating Distribution Chart"></div>' if rating_chart_path else ""}
                     </div>
 
-                    <div class="section">
-                        <h2>Business Categories</h2>
-                        {'<div class="chart"><img src="' + category_chart_path + '" alt="Business Categories Chart"></div>' if category_chart_path else "<p>Category chart could not be generated.</p>"}
-                        {'<table><thead><tr><th>Category</th><th>Count</th></tr></thead><tbody>' + ''.join([f'<tr><td>{cat}</td><td>{count}</td></tr>' for cat, count in stats.get("top_categories", {}).items()]) + '</tbody></table>' if stats.get("top_categories") else ""}
+                    <div class="two-col">
+                        <div class="section">
+                            <h2>Business Categories</h2>
+                            {'<div class="chart"><img src="' + category_chart_path + '" alt="Business Categories Chart"></div>' if category_chart_path else "<p>Category chart could not be generated.</p>"}
+                            {'<table><thead><tr><th>Category</th><th>Count</th></tr></thead><tbody>' + ''.join([f'<tr><td>{cat}</td><td>{count}</td></tr>' for cat, count in stats.get("top_categories", {}).items()]) + '</tbody></table>' if stats.get("top_categories") else ""}
+                        </div>
+
+                        <div class="section">
+                            <h2>Business Features</h2>
+                            {'<div class="chart"><img src="' + feature_chart_path + '" alt="Business Features Chart"></div>' if feature_chart_path else "<p>Features chart could not be generated.</p>"}
+                            {'<table><thead><tr><th>Feature</th><th>Count</th></tr></thead><tbody>' + ''.join([f'<tr><td>{feature}</td><td>{count}</td></tr>' for feature, count in stats.get("top_features", {}).items()]) + '</tbody></table>' if stats.get("top_features") else ""}
+                        </div>
                     </div>
 
                     <div class="section">
                         <h2>Information Availability</h2>
                         {'<div class="chart"><img src="' + info_chart_path + '" alt="Information Availability Chart"></div>' if info_chart_path else "<p>Info availability chart could not be generated.</p>"}
+                        
+                        <div class="two-col">
+                            <div>
+                                <h3>Top Email Domains</h3>
+                                {'<table><thead><tr><th>Domain</th><th>Count</th></tr></thead><tbody>' + ''.join([f'<tr><td>{domain}</td><td>{count}</td></tr>' for domain, count in stats.get("top_email_domains", {}).items()]) + '</tbody></table>' if stats.get("top_email_domains") else "<p>No email domain data available.</p>"}
+                            </div>
+                            <div>
+                                <h3>Website TLDs</h3>
+                                {'<table><thead><tr><th>TLD</th><th>Count</th></tr></thead><tbody>' + ''.join([f'<tr><td>.{tld}</td><td>{count}</td></tr>' for tld, count in stats.get("top_website_tlds", {}).items()]) + '</tbody></table>' if stats.get("top_website_tlds") else "<p>No website TLD data available.</p>"}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h2>Social Media Presence</h2>
+                        <div class="stats-grid">
+                            {''.join([f'<div class="stat-card"><div class="stat-number">{stats.get(f"with_social_{network}", 0)}</div><div class="stat-label">{network.capitalize()} ({stats.get(f"{network}_percentage", 0):.1f}%)</div></div>' for network in ["facebook", "instagram", "twitter", "linkedin", "youtube"] if stats.get(f"with_social_{network}", 0) > 0])}
+                        </div>
                     </div>
 
                     <div class="section">
                         <h2>Scraping Performance</h2>
-                        <ul>
-                            <li>Scrape Duration: {stats.get("scrape_duration_minutes", 0):.2f} minutes</li>
-                            <li>Total Grid Cells: {stats.get("scrape_stats", {}).get("total_grid_cells", 0)}</li>
-                            <li>Processed Grid Cells: {stats.get("scrape_stats", {}).get("processed_grid_cells", 0)}</li>
-                            <li>Empty Grid Cells Found: {stats.get("scrape_stats", {}).get("empty_grid_cells", 0)}</li>
-                            <li>Consent Pages Handled: {stats.get("scrape_stats", {}).get("consent_pages_handled", 0)}</li>
-                            <li>Extraction Errors / Skips: {stats.get("scrape_stats", {}).get("extraction_errors", 0)}</li>
-                            <li>Potential Rate Limit Hits: {stats.get("scrape_stats", {}).get("rate_limit_hits", 0)}</li>
-                            <li>Max Workers Used: {self.max_workers}</li>
-                        </ul>
+                        <div class="stats-grid">
+                            <div class="stat-card"><div class="stat-number">{stats.get("scrape_duration_minutes", 0):.1f}</div><div class="stat-label">Minutes</div></div>
+                            <div class="stat-card"><div class="stat-number">{stats.get("scrape_stats", {}).get("businesses_per_hour", 0):.1f}</div><div class="stat-label">Businesses/Hour</div></div>
+                            <div class="stat-card"><div class="stat-number">{stats.get("scrape_stats", {}).get("total_grid_cells", 0)}</div><div class="stat-label">Grid Cells</div></div>
+                            <div class="stat-card"><div class="stat-number">{stats.get("scrape_stats", {}).get("processed_grid_cells", 0)}</div><div class="stat-label">Processed Cells</div></div>
+                            <div class="stat-card"><div class="stat-number">{stats.get("scrape_stats", {}).get("empty_grid_cells", 0)}</div><div class="stat-label">Empty Cells</div></div>
+                        </div>
+                        <div style="margin-top: 20px;">
+                            <h3>Additional Statistics</h3>
+                            <ul>
+                                <li>Consent Pages Handled: {stats.get("scrape_stats", {}).get("consent_pages_handled", 0)}</li>
+                                <li>Extraction Errors / Skips: {stats.get("scrape_stats", {}).get("extraction_errors", 0)}</li>
+                                <li>Potential Rate Limit Hits: {stats.get("scrape_stats", {}).get("rate_limit_hits", 0)}</li>
+                                <li>Max Workers Used: {self.max_workers}</li>
+                                <li>Total Runtime: {stats.get("scrape_duration_formatted", "00:00:00")}</li>
+                            </ul>
+                        </div>
                     </div>
 
                     <div class="footer">
                         <p>Generated by Google Maps Grid Scraper v{VERSION}</p>
+                        <p>Results saved to: {self.results_dir}/google_maps_data_{self.session_id}.csv/.json/.xlsx</p>
                     </div>
                 </div>
             </body>
@@ -2833,6 +4455,106 @@ class GoogleMapsGridScraper:
 
         except Exception as e:
             self.logger.error(f"Error generating HTML report: {e}", exc_info=True)
+
+
+    def generate_simple_html_report(self, stats):
+        """Generate a simpler HTML report without visualizations when Matplotlib is not available"""
+        try:
+            html_content = f"""
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Google Maps Scraper Report - {self.session_id}</title>
+                <style>
+                    body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 20px; line-height: 1.6; color: #333; background-color: #f9f9f9; }}
+                    .container {{ max-width: 1200px; margin: 0 auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+                    .header {{ background-color: #4285F4; color: white; padding: 20px; text-align: center; margin-bottom: 30px; border-radius: 5px; }}
+                    .header h1 {{ margin: 0; font-size: 2em; }} .header p {{ margin: 5px 0 0; font-size: 0.9em; opacity: 0.9; }}
+                    .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px; margin-bottom: 30px; }}
+                    .stat-card {{ background-color: #e8f0fe; border-radius: 5px; padding: 15px; text-align: center; }}
+                    .stat-number {{ font-size: 2.2em; font-weight: bold; color: #1a73e8; margin-bottom: 5px; }}
+                    .stat-label {{ font-size: 0.9em; color: #5f6368; }}
+                    .section {{ background-color: #fff; border: 1px solid #e0e0e0; border-radius: 5px; padding: 20px; margin-bottom: 30px; }}
+                    .section h2 {{ margin-top: 0; color: #4285F4; border-bottom: 2px solid #e0e0e0; padding-bottom: 10px; margin-bottom: 20px; }}
+                    ul {{ padding-left: 20px; }} li {{ margin-bottom: 8px; }}
+                    .footer {{ text-align: center; margin-top: 40px; color: #666; font-size: 12px; border-top: 1px solid #eee; padding-top: 15px; }}
+                    table {{ width: 100%; border-collapse: collapse; margin-top: 15px; }}
+                    th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 0.9em; }}
+                    th {{ background-color: #f2f2f2; font-weight: bold; }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <h1>Google Maps Scraper Report</h1>
+                        <p>Session ID: {self.session_id} | Generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                    </div>
+
+                    <div class="section">
+                        <h2>Overall Summary</h2>
+                        <div class="stats-grid">
+                            <div class="stat-card"><div class="stat-number">{stats.get("total_businesses", 0)}</div><div class="stat-label">Total Businesses</div></div>
+                            <div class="stat-card"><div class="stat-number">{stats.get("unique_businesses", 0)}</div><div class="stat-label">Unique Businesses</div></div>
+                            <div class="stat-card"><div class="stat-number">{stats.get("email_percentage", 0):.1f}%</div><div class="stat-label">With Email</div></div>
+                            <div class="stat-card"><div class="stat-number">{stats.get("website_percentage", 0):.1f}%</div><div class="stat-label">With Website</div></div>
+                            <div class="stat-card"><div class="stat-number">{stats.get("phone_percentage", 0):.1f}%</div><div class="stat-label">With Phone</div></div>
+                            <div class="stat-card"><div class="stat-number">{stats.get("rating_percentage", 0):.1f}%</div><div class="stat-label">With Rating</div></div>
+                        </div>
+                    </div>
+
+                    <div class="section">
+                        <h2>Ratings & Reviews</h2>
+                        <ul>
+                            <li>Average Rating: {stats.get("avg_rating", 0):.2f}</li>
+                            <li>Median Rating: {stats.get("median_rating", 0):.1f}</li>
+                            <li>Total Reviews: {stats.get("total_reviews", 0):,}</li>
+                            <li>Average Reviews per Business: {stats.get("avg_reviews", 0):.1f}</li>
+                            <li>Median Reviews: {stats.get("median_reviews", 0):,}</li>
+                        </ul>
+                    </div>
+
+                    <div class="section">
+                        <h2>Top Business Categories</h2>
+                        <table>
+                            <thead><tr><th>Category</th><th>Count</th></tr></thead>
+                            <tbody>
+                                {''.join([f'<tr><td>{cat}</td><td>{count}</td></tr>' for cat, count in stats.get("top_categories", {}).items()][:15])}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="section">
+                        <h2>Scraping Performance</h2>
+                        <ul>
+                            <li>Total Runtime: {stats.get("scrape_duration_minutes", 0):.2f} minutes</li>
+                            <li>Businesses per Hour: {stats.get("scrape_stats", {}).get("businesses_per_hour", 0):.1f}</li>
+                            <li>Total Grid Cells: {stats.get("scrape_stats", {}).get("total_grid_cells", 0)}</li>
+                            <li>Processed Grid Cells: {stats.get("scrape_stats", {}).get("processed_grid_cells", 0)}</li>
+                            <li>Empty Grid Cells Found: {stats.get("scrape_stats", {}).get("empty_grid_cells", 0)}</li>
+                            <li>Consent Pages Handled: {stats.get("scrape_stats", {}).get("consent_pages_handled", 0)}</li>
+                            <li>Extraction Errors / Skips: {stats.get("scrape_stats", {}).get("extraction_errors", 0)}</li>
+                            <li>Potential Rate Limit Hits: {stats.get("scrape_stats", {}).get("rate_limit_hits", 0)}</li>
+                            <li>Max Workers Used: {self.max_workers}</li>
+                        </ul>
+                    </div>
+
+                    <div class="footer">
+                        <p>Generated by Google Maps Grid Scraper v{VERSION}</p>
+                        <p>Results saved to: {self.results_dir}/google_maps_data_{self.session_id}.csv/.json/.xlsx</p>
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+
+            html_report_path = self.reports_dir / f"report_{self.session_id}.html"
+            with open(html_report_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            self.logger.info(f"Simple HTML report saved to {html_report_path}")
+        except Exception as e:
+            self.logger.error(f"Error generating simple HTML report: {e}", exc_info=True)
 
 
     def sort_grid_cells_by_density(self, grid):
@@ -2905,6 +4627,13 @@ def run_grid_scraper():
     parser.add_argument('--retries', type=int, default=3, help='Browser health error threshold before recreating (default: 3)')
     parser.add_argument('--proxies', type=str, help='File containing list of proxies (one per line, e.g., http://user:pass@host:port)')
 
+    # New advanced options
+    parser.add_argument('--driver-path', type=str, help='Path to chromedriver executable')
+    parser.add_argument('--chrome-binary', type=str, help='Path to Chrome binary')
+    parser.add_argument('--user-data-dir', type=str, help='Directory for browser profiles')
+    parser.add_argument('--deep-email', action='store_true', help='Enable deep email search (follows contact page links)')
+    parser.add_argument('--no-reviews', dest='extract_reviews', action='store_false', default=True, help='Skip extracting review snippets')
+    
     # Resume arguments
     parser.add_argument('--resume', action='store_true', help='Resume from previous session (requires --results-file and --grid-file)')
     parser.add_argument('--results-file', type=str, help='Results JSON file to load for resume')
@@ -2959,12 +4688,17 @@ def run_grid_scraper():
             cache_enabled=args.cache_enabled,
             browser_error_threshold=args.retries, # Use retries for browser health threshold
             no_images=args.no_images,
-            proxy_list=proxy_list
+            proxy_list=proxy_list,
+            user_data_dir=args.user_data_dir,
+            driver_path=args.driver_path,
+            chrome_binary=args.chrome_binary
         )
 
         # Set configuration options
         scraper.config["extract_emails"] = args.extract_emails
         scraper.config["grid_size_meters"] = args.grid_size # Store grid size
+        scraper.config["deep_email_search"] = args.deep_email
+        scraper.config["extract_reviews"] = args.extract_reviews
 
         # Run the scraper
         if args.resume:
@@ -3094,6 +4828,14 @@ def run_interactive_grid_scraper():
     extract_emails = input("Extract emails from websites (slower)? (y/n, default: y): ").strip().lower() != 'n'
     print(f"   Extract emails: {'Yes' if extract_emails else 'No'}")
 
+    deep_email_search = False
+    if extract_emails:
+        deep_email_search = input("   Enable deep email search (check contact pages)? (y/n, default: n): ").strip().lower() == 'y'
+        print(f"   Deep email search: {'Yes' if deep_email_search else 'No'}")
+
+    extract_reviews = input("Extract review snippets? (y/n, default: y): ").strip().lower() != 'n'
+    print(f"   Extract reviews: {'Yes' if extract_reviews else 'No'}")
+
     try:
         workers_input = input(f"Number of parallel workers? (1-{os.cpu_count()*5 or 10}, default: 5): ").strip() # Default 5, suggest based on CPU
         max_workers = int(workers_input) if workers_input else 5
@@ -3101,6 +4843,19 @@ def run_interactive_grid_scraper():
     except ValueError:
         max_workers = 5
     print(f"   Parallel workers: {max_workers}")
+    
+    # Advanced options
+    print("\n--- Advanced Options (Optional) ---")
+    driver_path = input("ChromeDriver path (optional): ").strip() or None
+    chrome_binary = input("Chrome binary path (optional): ").strip() or None
+    user_data_dir = input("User data directory (optional): ").strip() or None
+    
+    if driver_path:
+        print(f"   Using ChromeDriver: {driver_path}")
+    if chrome_binary: 
+        print(f"   Using Chrome binary: {chrome_binary}")
+    if user_data_dir:
+        print(f"   Using user data dir: {user_data_dir}")
 
     # --- Initialize and Run ---
     scraper = None
@@ -3110,10 +4865,15 @@ def run_interactive_grid_scraper():
             headless=headless_mode,
             max_workers=max_workers,
             debug=debug_mode,
-            no_images=debug_mode is False # Disable images if not debugging by default
+            no_images=debug_mode is False, # Disable images if not debugging by default
+            user_data_dir=user_data_dir,
+            driver_path=driver_path,
+            chrome_binary=chrome_binary
         )
         scraper.config["extract_emails"] = extract_emails
+        scraper.config["deep_email_search"] = deep_email_search
         scraper.config["grid_size_meters"] = grid_size
+        scraper.config["extract_reviews"] = extract_reviews
 
         print("\nStarting scraper...")
         if resume:
